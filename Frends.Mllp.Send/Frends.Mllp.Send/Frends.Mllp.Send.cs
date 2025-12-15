@@ -68,6 +68,8 @@ public static class Mllp
 
     private static string PrepareMessage(string hl7Message, PipeParser parser)
     {
+        hl7Message = NormalizeLineEndings(hl7Message);
+
         if (parser is null)
             return EnsureEndsWithCarriageReturn(hl7Message);
 
@@ -81,6 +83,11 @@ public static class Mllp
         {
             throw new ArgumentException("HL7 message is not valid according to NHapi.", ex);
         }
+    }
+
+    private static string NormalizeLineEndings(string message)
+    {
+        return message.Replace("\r\n", "\r").Replace("\n", "\r");
     }
 
     private static string EnsureEndsWithCarriageReturn(string message)
