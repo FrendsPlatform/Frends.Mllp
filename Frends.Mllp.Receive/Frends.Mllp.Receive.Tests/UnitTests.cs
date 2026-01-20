@@ -6,6 +6,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Frends.Mllp.Receive.Definitions;
+using NHapi.Base.Parser;
+using NHapi.Base.Util;
 using NUnit.Framework;
 
 namespace Frends.Mllp.Receive.Tests;
@@ -17,9 +19,9 @@ public class UnitTests
     public void ShouldReceiveSingleMessageWithinListenWindow()
     {
         var port = GetAvailablePort();
-        var input = new Input { Port = port };
-        var connection = new Connection { ListenAddress = IPAddress.Loopback.ToString() };
-        var options = new Options { ListenDurationSeconds = 2, BufferSize = 1024 };
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 2, BufferSize = 1024 };
+        var options = new Options { };
 
         var sender = Task.Run(async () =>
         {
@@ -39,9 +41,9 @@ public class UnitTests
     public void ShouldReceiveMultipleMessagesFromMultipleClients()
     {
         var port = GetAvailablePort();
-        var input = new Input { Port = port };
-        var connection = new Connection { ListenAddress = IPAddress.Loopback.ToString() };
-        var options = new Options { ListenDurationSeconds = 3, BufferSize = 1024 };
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 3, BufferSize = 1024 };
+        var options = new Options { };
 
         var sender1 = Task.Run(async () =>
         {
@@ -66,9 +68,9 @@ public class UnitTests
     public void ShouldReturnEmptyWhenNoMessagesArrive()
     {
         var port = GetAvailablePort();
-        var input = new Input { Port = port };
-        var connection = new Connection { ListenAddress = IPAddress.Loopback.ToString() };
-        var options = new Options { ListenDurationSeconds = 1 };
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 1 };
+        var options = new Options { };
 
         var result = Mllp.Receive(input, connection, options, CancellationToken.None);
 
@@ -76,7 +78,41 @@ public class UnitTests
         Assert.That(result.Output, Is.Empty);
     }
 
-    private static async Task SendMessageAsync(int port, string message)
+    [Test]
+    public void ShouldSendProperAck()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 2, BufferSize = 1024 };
+        var options = new Options { };
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(50);
+            return await SendMessageAsync(port, "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5");
+        });
+
+        var result = Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ack = ackTask.Result;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+
+        Assert.That(ack, Is.Not.Null.And.Not.Empty);
+
+        var parser = new PipeParser();
+        var ackMessage = parser.Parse(ack);
+        var terser = new Terser(ackMessage);
+
+        Assert.That(terser.Get("/MSH-9-1"), Is.EqualTo("ACK"));
+        Assert.That(terser.Get("/MSH-9-2"), Is.EqualTo("O01"));
+        Assert.That(terser.Get("/MSA-1"), Is.EqualTo("AA"));
+        Assert.That(terser.Get("/MSA-2"), Is.EqualTo("CTRL123"));
+        Assert.That(terser.Get("/MSH-3"), Is.EqualTo("RCVAPP"));
+        Assert.That(terser.Get("/MSH-5"), Is.EqualTo("SNDAPP"));
+    }
+
+    private static async Task<string> SendMessageAsync(int port, string message)
     {
         using var client = new TcpClient();
         var attempts = 0;
@@ -99,17 +135,35 @@ public class UnitTests
         using var stream = client.GetStream();
         await stream.WriteAsync(bytes, 0, bytes.Length);
 
-        // Try to read ACK if it arrives, but do not block the test.
-        var buffer = new byte[128];
-        stream.ReadTimeout = 250;
+        var buffer = new byte[256];
+        stream.ReadTimeout = 1000;
         try
         {
-            await stream.ReadAsync(buffer, 0, buffer.Length);
+            var read = await stream.ReadAsync(buffer, 0, buffer.Length);
+            if (read <= 0)
+                return string.Empty;
+
+            var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
+            return StripMllpFrame(ackPayload);
         }
         catch
         {
-            // Ignore timeouts or disconnects while waiting for ACK.
+            return string.Empty;
         }
+    }
+
+    private static string StripMllpFrame(string framed)
+    {
+        if (string.IsNullOrEmpty(framed))
+            return framed;
+
+        var trimmed = framed;
+        if (trimmed[0] == '\u000b')
+            trimmed = trimmed[1..];
+        if (trimmed.EndsWith("\u001c\r", StringComparison.Ordinal))
+            trimmed = trimmed[..^2];
+
+        return trimmed;
     }
 
     private static int GetAvailablePort()

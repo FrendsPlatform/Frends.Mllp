@@ -10,9 +10,12 @@ using Frends.Mllp.Receive.Definitions;
 using Frends.Mllp.Receive.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SuperSocket;
+using NHapi.Base.Model;
+using NHapi.Base.Parser;
+using NHapi.Base.Util;
+using NHapiTools.Base;
+using NHapiTools.Base.Util;
 using SuperSocket.ProtoBase;
-using SuperSocket.Server;
 using SuperSocket.Server.Abstractions;
 using SuperSocket.Server.Host;
 
@@ -52,10 +55,10 @@ public static class Mllp
             ValidateParameters(input, connection, options);
 
             var messages = new ConcurrentBag<string>();
-            var encoding = options.GetEncoding();
+            var encoding = connection.GetEncoding();
 
             using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(options.ListenDurationSeconds));
+            linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
 
             using var host = BuildMllpHost(input, connection, options, encoding, messages);
 
@@ -83,15 +86,15 @@ public static class Mllp
         if (input.Port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(input.Port), "Port must be between 1 and 65535.");
 
-        if (options.ListenDurationSeconds <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options.ListenDurationSeconds), "Listen duration must be greater than zero.");
+        if (connection.ListenDurationSeconds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(connection.ListenDurationSeconds), "Listen duration must be greater than zero.");
 
-        if (options.BufferSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(options.BufferSize), "Buffer size must be positive.");
+        if (connection.BufferSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(connection.BufferSize), "Buffer size must be positive.");
 
-        _ = options.GetEncoding();
+        _ = connection.GetEncoding();
 
-        if (!string.IsNullOrWhiteSpace(connection.ListenAddress) && !IPAddress.TryParse(connection.ListenAddress, out _))
+        if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
     }
 
@@ -102,8 +105,7 @@ public static class Mllp
         Encoding encoding,
         ConcurrentBag<string> messages)
     {
-        var listenIp = string.IsNullOrWhiteSpace(connection.ListenAddress) ? "Any" : connection.ListenAddress;
-        var ackBytes = GetAckBytes(options, encoding);
+        var listenIp = string.IsNullOrWhiteSpace(input.ListenAddress) ? "Any" : input.ListenAddress;
 
         return SuperSocketHostBuilder.Create<MllpPackage, MllpPipelineFilter>()
             .ConfigureServices((_, services) =>
@@ -114,8 +116,14 @@ public static class Mllp
             {
                 messages.Add(package.Payload);
 
-                if (!options.SendAcknowledgement)
+                if (!connection.SendAcknowledgement)
                     return;
+
+                var ackPayload = BuildAcknowledgement(package.Payload, connection);
+                var ackMessage = string.IsNullOrEmpty(ackPayload)
+                    ? $"{StartBlock}ACK{EndBlock}{CarriageReturn}"
+                    : $"{StartBlock}{ackPayload}{EndBlock}{CarriageReturn}";
+                var ackBytes = encoding.GetBytes(ackMessage);
 
                 try
                 {
@@ -128,8 +136,8 @@ public static class Mllp
             })
             .ConfigureSuperSocket(opt =>
             {
-                opt.Name = "MllpServer";
-                opt.ReceiveBufferSize = options.BufferSize;
+                opt.Name = "FrendsMllpServer";
+                opt.ReceiveBufferSize = connection.BufferSize;
                 opt.Listeners = new List<ListenOptions>
                 {
                     new ()
@@ -142,14 +150,32 @@ public static class Mllp
             .Build();
     }
 
-    private static byte[] GetAckBytes(Options options, Encoding encoding)
+    private static string BuildAcknowledgement(string message, Connection connection)
     {
-        if (!options.SendAcknowledgement)
-            return Array.Empty<byte>();
+        if (string.IsNullOrWhiteSpace(message))
+            return string.Empty;
 
-        var ackPayload = string.IsNullOrEmpty(options.AcknowledgementMessage) ? "ACK" : options.AcknowledgementMessage;
-        var ackMessage = $"{StartBlock}{ackPayload}{EndBlock}{CarriageReturn}";
-        return encoding.GetBytes(ackMessage);
+        try
+        {
+            var parser = new PipeParser();
+            var parsed = parser.Parse(message);
+            if (parsed is not IMessage inbound)
+                return string.Empty;
+
+            var inboundTerser = new Terser(inbound);
+            var ackType = Enum.TryParse(connection.AcknowledgementMessage, true, out AckTypes parsedAck)
+                ? parsedAck
+                : AckTypes.AA;
+            var ackApp = inboundTerser.Get("/MSH-5");
+            var ackFacility = inboundTerser.Get("/MSH-6");
+            var ack = inbound.GenerateAck(ackType, ackApp, ackFacility, string.Empty);
+
+            return parser.Encode(ack);
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static void WaitForShutdown(CancellationToken cancellationToken)

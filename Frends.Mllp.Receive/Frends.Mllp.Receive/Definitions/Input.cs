@@ -9,6 +9,14 @@ namespace Frends.Mllp.Receive.Definitions;
 public class Input
 {
     /// <summary>
+    /// IP address or hostname to bind to. Leave empty to listen on all interfaces.
+    /// </summary>
+    /// <example>127.0.0.1</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string ListenAddress { get; set; } = string.Empty;
+
+    /// <summary>
     /// TCP port the server listens on.
     /// </summary>
     /// <example>2575</example>
