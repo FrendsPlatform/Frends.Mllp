@@ -1,6 +1,11 @@
 ﻿using System;
 using System.ComponentModel;
+using System.IO;
+using System.Net.Http;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using Frends.Mllp.Send.Definitions;
@@ -43,22 +48,34 @@ public static class Mllp
             var receiveTimeoutMs = (int)TimeSpan.FromSeconds(connection.ReadTimeoutSeconds).TotalMilliseconds;
 
             var acknowledgement = string.Empty;
-            if (options.ExpectAcknowledgement)
+            using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, receiveTimeoutMs))
             {
-                using var client = new SimpleMLLPClient(connection.Host, connection.Port, Encoding.ASCII, receiveTimeoutMs);
-                acknowledgement = client.SendHL7Message(message, connection.ReadTimeoutSeconds);
-            }
-            else
-            {
-                SendWithoutAcknowledgement(message, connection, cancellationToken);
-            }
+                if (connection.TlsMode == TlsMode.Mtls)
+                {
+                    if (string.IsNullOrEmpty(connection.ClientCertPath))
+                        throw new Exception("mTLS is enabled but client certificate path is missing.");
 
-            return new Result
-            {
-                Success = true,
-                Output = acknowledgement,
-                Error = null,
-            };
+                    var clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
+
+                    wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors);
+                }
+
+                if (options.ExpectAcknowledgement)
+                {
+                    acknowledgement = wrapper.Send(message, receiveTimeoutMs);
+                }
+                else
+                {
+                    wrapper.SendOnly(message);
+                }
+
+                return new Result
+                {
+                    Success = true,
+                    Output = acknowledgement,
+                    Error = null,
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -96,21 +113,5 @@ public static class Mllp
             return message;
 
         return $"{message}\r";
-    }
-
-    private static void SendWithoutAcknowledgement(string message, Connection connection, CancellationToken cancellationToken)
-    {
-        var framed = MLLP.CreateMLLPMessage(message);
-        var payload = Encoding.ASCII.GetBytes(framed);
-
-        using var tcpClient = new TcpClient();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(connection.ConnectTimeoutSeconds));
-        tcpClient.ConnectAsync(connection.Host, connection.Port, cts.Token).GetAwaiter().GetResult();
-        tcpClient.SendTimeout = (int)TimeSpan.FromSeconds(connection.ConnectTimeoutSeconds).TotalMilliseconds;
-
-        using var stream = tcpClient.GetStream();
-        stream.Write(payload, 0, payload.Length);
-        stream.Flush();
     }
 }

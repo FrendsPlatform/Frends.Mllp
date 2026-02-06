@@ -24,6 +24,29 @@ public class Connection
     public int Port { get; set; } = 2575;
 
     /// <summary>
+    /// The TLS encryption mode to use for the connection.
+    /// </summary>
+    /// <example>TlsMode.None</example>
+    [DefaultValue(TlsMode.None)]
+    public TlsMode TlsMode { get; set; } = TlsMode.None;
+
+    /// <summary>
+    /// Path to the client certificate file (PFX or P12 format).
+    /// Required only for MTLS mode.
+    /// </summary>
+    /// <example>C:\certs\client.pfx</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    public string ClientCertPath { get; set; }
+
+    /// <summary>
+    /// Password for the client certificate.
+    /// </summary>
+    /// <example>MyStrongPassword123</example>
+    [PasswordPropertyText]
+    [DisplayFormat(DataFormatString = "Text")]
+    public string ClientCertPassword { get; set; }
+
+    /// <summary>
     /// Connection timeout in seconds when opening the socket.
     /// </summary>
     /// <example>30</example>
@@ -36,4 +59,12 @@ public class Connection
     /// <example>30</example>
     [DefaultValue(30)]
     public int ReadTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// If enabled, the task will ignore server-side certificate validation errors.
+    /// (e.g., self-signed certificates or hostname mismatches).
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    public bool IgnoreServerCertificateErrors { get; set; } = false;
 }

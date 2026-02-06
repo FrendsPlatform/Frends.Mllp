@@ -26,4 +26,13 @@
         </PackageReference>
     </ItemGroup>
 
+	<ItemGroup>
+		<None Update="TestData\client.pfx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="TestData\server.pfx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
 </Project>
