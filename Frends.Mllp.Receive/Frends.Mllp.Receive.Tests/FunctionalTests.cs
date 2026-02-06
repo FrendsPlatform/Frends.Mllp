@@ -1,7 +1,11 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,8 +17,12 @@ using NUnit.Framework;
 namespace Frends.Mllp.Receive.Tests;
 
 [TestFixture]
-public class UnitTests
+public class FunctionalTests
 {
+    private string _clientPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/client.pfx");
+    private string _serverPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/server.pfx");
+    private string _password = "password";
+
     [Test]
     public void ShouldReceiveSingleMessageWithinListenWindow()
     {
@@ -112,7 +120,99 @@ public class UnitTests
         Assert.That(terser.Get("/MSH-5"), Is.EqualTo("SNDAPP"));
     }
 
-    private static async Task<string> SendMessageAsync(int port, string message)
+    [Test]
+    public void ShouldReceiveMessageViaMtls()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+
+        var connection = new Connection
+        {
+            TlsMode = TlsMode.Mtls,
+            ServerCertPath = _serverPfxPath,
+            ServerCertPassword = _password,
+            IgnoreClientCertificateErrors = true,
+            ListenDurationSeconds = 2,
+            BufferSize = 1024,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+            return await SendMessageAsync(port, "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|123|P|2.5", _clientPfxPath, _password);
+        });
+
+        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var ack = sender.Result;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|SENDER"));
+            Assert.That(ack, Is.Not.Null.And.Not.Empty);
+            Assert.That(ack, Does.Contain("MSH"));
+            Assert.That(ack, Does.Contain("MSA|AA"));
+            Assert.That(ack, Does.Contain("|123|"));
+        });
+    }
+
+    [Test]
+    public void ShouldFail_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection
+        {
+            TlsMode = TlsMode.Mtls,
+            ServerCertPath = _serverPfxPath,
+            ServerCertPassword = _password,
+            IgnoreClientCertificateErrors = false,
+            ListenDurationSeconds = 2,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+
+            return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
+        });
+
+        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+
+        Assert.That(result.Output, Is.Empty);
+    }
+
+    [Test]
+    public void ShouldSucceed_WhenClientCertIsUntrusted_ButIgnoreIsTrue()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection
+        {
+            TlsMode = TlsMode.Mtls,
+            ServerCertPath = _serverPfxPath,
+            ServerCertPassword = _password,
+            IgnoreClientCertificateErrors = true,
+            ListenDurationSeconds = 2,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+            return await SendMessageAsync(port, "MSG|ACCEPTED_BY_IGNORE", _clientPfxPath, _password);
+        });
+
+        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output, Has.Length.EqualTo(1));
+            Assert.That(result.Output.First(), Is.EqualTo("MSG|ACCEPTED_BY_IGNORE"));
+        });
+    }
+
+    private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
     {
         using var client = new TcpClient();
         var attempts = 0;
@@ -126,30 +226,35 @@ public class UnitTests
             catch (SocketException) when (attempts < 5)
             {
                 attempts++;
-                await Task.Delay(50);
+                await Task.Delay(100);
             }
+        }
+
+        Stream stream = client.GetStream();
+
+        if (!string.IsNullOrEmpty(clientCertPath))
+        {
+            var sslStream = new SslStream(stream, false, (sender, cert, chain, errors) => true);
+            var clientCert = new X509Certificate2(clientCertPath, password);
+            var clientCerts = new X509Certificate2Collection(clientCert);
+
+            await sslStream.AuthenticateAsClientAsync("localhost", clientCerts, SslProtocols.Tls12, false);
+            stream = sslStream;
         }
 
         var payload = $"\u000b{message}\u001c\r";
         var bytes = Encoding.UTF8.GetBytes(payload);
-        using var stream = client.GetStream();
+
         await stream.WriteAsync(bytes, 0, bytes.Length);
+        await stream.FlushAsync();
 
-        var buffer = new byte[256];
-        stream.ReadTimeout = 1000;
-        try
-        {
-            var read = await stream.ReadAsync(buffer, 0, buffer.Length);
-            if (read <= 0)
-                return string.Empty;
+        var buffer = new byte[2048];
+        var read = await stream.ReadAsync(buffer, 0, buffer.Length);
 
-            var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
-            return StripMllpFrame(ackPayload);
-        }
-        catch
-        {
-            return string.Empty;
-        }
+        if (read <= 0) return string.Empty;
+
+        var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
+        return StripMllpFrame(ackPayload);
     }
 
     private static string StripMllpFrame(string framed)

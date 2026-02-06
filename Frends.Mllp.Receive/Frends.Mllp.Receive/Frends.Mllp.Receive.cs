@@ -4,6 +4,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Net;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using Frends.Mllp.Receive.Definitions;
@@ -54,7 +57,7 @@ public static class Mllp
 
             ValidateParameters(input, connection, options);
 
-            var messages = new ConcurrentBag<string>();
+            var messages = new ConcurrentQueue<string>();
             var encoding = connection.GetEncoding();
 
             using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -103,9 +106,18 @@ public static class Mllp
         Connection connection,
         Options options,
         Encoding encoding,
-        ConcurrentBag<string> messages)
+        ConcurrentQueue<string> messages)
     {
         var listenIp = string.IsNullOrWhiteSpace(input.ListenAddress) ? "Any" : input.ListenAddress;
+
+        X509Certificate2 serverCert = null;
+        if (connection.TlsMode == TlsMode.Mtls)
+        {
+            if (string.IsNullOrEmpty(connection.ServerCertPath))
+                throw new ArgumentException("Server certificate path is required for Mtls mode.");
+
+            serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
+        }
 
         return SuperSocketHostBuilder.Create<MllpPackage, MllpPipelineFilter>()
             .ConfigureServices((_, services) =>
@@ -114,7 +126,7 @@ public static class Mllp
             })
             .UsePackageHandler(async (session, package) =>
             {
-                messages.Add(package.Payload);
+                messages.Enqueue(package.Payload);
 
                 if (!connection.SendAcknowledgement)
                     return;
@@ -138,16 +150,33 @@ public static class Mllp
             {
                 opt.Name = "FrendsMllpServer";
                 opt.ReceiveBufferSize = connection.BufferSize;
-                opt.Listeners = new List<ListenOptions>
+                var listener = new ListenOptions
                 {
-                    new ()
-                    {
-                        Ip = listenIp,
-                        Port = input.Port,
-                    },
+                    Ip = listenIp,
+                    Port = input.Port,
                 };
+
+                if (connection.TlsMode == TlsMode.Mtls)
+                {
+                    listener.AuthenticationOptions = new ServerAuthenticationOptions
+                    {
+                        ServerCertificate = serverCert,
+                        ClientCertificateRequired = true,
+                        EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                        CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+                        RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+                        {
+                            if (connection.IgnoreClientCertificateErrors)
+                                return true;
+
+                            return errors == SslPolicyErrors.None;
+                        },
+                    };
+                }
+
+                opt.Listeners = new List<ListenOptions> { listener };
             })
-            .Build();
+        .Build();
     }
 
     private static string BuildAcknowledgement(string message, Connection connection)

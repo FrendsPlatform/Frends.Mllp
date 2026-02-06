@@ -10,6 +10,29 @@ namespace Frends.Mllp.Receive.Definitions;
 public class Connection
 {
     /// <summary>
+    /// The TLS encryption mode to use for the connection.
+    /// </summary>
+    /// <example>TlsMode.None</example>
+    [DefaultValue(TlsMode.None)]
+    public TlsMode TlsMode { get; set; } = TlsMode.None;
+
+    /// <summary>
+    /// Path to the server certificate file (PFX or P12 format).
+    /// Required only for MTLS mode.
+    /// </summary>
+    /// <example>C:\certs\client.pfx</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    public string ServerCertPath { get; set; }
+
+    /// <summary>
+    /// Password for the server certificate.
+    /// </summary>
+    /// <example>MyStrongPassword123</example>
+    [PasswordPropertyText]
+    [DisplayFormat(DataFormatString = "Text")]
+    public string ServerCertPassword { get; set; }
+
+    /// <summary>
     /// How long the listener waits for incoming messages before shutting down. Value in seconds.
     /// </summary>
     /// <example>30</example>
@@ -46,6 +69,14 @@ public class Connection
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("AA")]
     public string AcknowledgementMessage { get; set; } = "AA";
+
+    /// <summary>
+    /// If enabled, the server will accept client certificates even if they are
+    /// self-signed or have validation errors (Mutual TLS only).
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    public bool IgnoreClientCertificateErrors { get; set; } = false;
 
     internal Encoding GetEncoding() => System.Text.Encoding.GetEncoding(Encoding);
 }

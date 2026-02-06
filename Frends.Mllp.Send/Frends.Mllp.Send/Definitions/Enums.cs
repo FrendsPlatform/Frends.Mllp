@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Frends.Mllp.Send.Definitions
+﻿namespace Frends.Mllp.Send.Definitions
 {
     /// <summary>
     /// Defines the encryption and authentication level for the MLLP connection.
