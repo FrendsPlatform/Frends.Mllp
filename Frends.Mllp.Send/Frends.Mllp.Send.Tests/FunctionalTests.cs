@@ -13,12 +13,13 @@ using NUnit.Framework;
 
 namespace Frends.Mllp.Send.Tests
 {
-     /* * MTLS TESTING: These tests require a trusted certificate environment.
-     * To run locally without installing certs on Windows, use Docker from the solution root:
-     * 1. docker build -t mllp-tests -f Frends.Mllp.Send.Tests/Dockerfile .
-     * 2. docker run --rm mllp-tests
-     * Note: Visual Studio Test Explorer might fail mTLS checks due to Windows trust store limits.
-     */
+    /// MTLS TESTING: These tests require a trusted certificate environment.
+    /// To run locally without installing certs on Windows, use Docker from the solution root:
+    /// 1. docker build -t mllp-tests -f Frends.Mllp.Send.Tests/Dockerfile .
+    /// 2. docker run --rm mllp-tests
+    /// <summary>
+    ///  MTLS TESTING: These tests require a trusted certificate environment.
+    /// </summary>ws trust store limits.
     [TestFixture]
     public class FunctionalTests
     {
