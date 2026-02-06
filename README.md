@@ -4,8 +4,8 @@ Frends Task for Mllp operations.
 
 # Tasks
 
-- [Frends.Frends.Mllp.Receive](Frends.Frends.Mllp.Receive/README.md)
-- [Frends.Frends.Mllp.Send](Frends.Mllp.Send/README.md)
+- [Frends.Mllp.Receive](Frends.Mllp.Receive/README.md)
+- [Frends.Mllp.Send](Frends.Mllp.Send/README.md)
 - 
 # Contributing
 When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change.

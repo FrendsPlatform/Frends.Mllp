@@ -45,17 +45,18 @@ public static class Mllp
 
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
             var message = PrepareMessage(input.Hl7Message, parser);
+            var connectTimeoutMs = (int)TimeSpan.FromSeconds(connection.ConnectTimeoutSeconds).TotalMilliseconds;
             var receiveTimeoutMs = (int)TimeSpan.FromSeconds(connection.ReadTimeoutSeconds).TotalMilliseconds;
 
             var acknowledgement = string.Empty;
-            using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, receiveTimeoutMs))
+            using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, connectTimeoutMs))
             {
                 if (connection.TlsMode == TlsMode.Mtls)
                 {
                     if (string.IsNullOrEmpty(connection.ClientCertPath))
                         throw new Exception("mTLS is enabled but client certificate path is missing.");
 
-                    var clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
+                    using var clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
 
                     wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors);
                 }

@@ -179,6 +179,14 @@ public class FunctionalTests
 
         var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
+        try
+        {
+            sender.Wait(TimeSpan.FromSeconds(1));
+        }
+        catch
+        {
+        }
+
         Assert.That(result.Output, Is.Empty);
     }
 
@@ -203,6 +211,8 @@ public class FunctionalTests
         });
 
         var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+
+        sender.Wait(TimeSpan.FromSeconds(1));
 
         Assert.Multiple(() =>
         {

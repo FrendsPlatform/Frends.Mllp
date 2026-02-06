@@ -63,20 +63,35 @@ public static class Mllp
             using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
 
-            using var host = BuildMllpHost(input, connection, options, encoding, messages);
-
-            host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
-
-            WaitForShutdown(linkedTokenSource.Token);
-
-            host.StopAsync().GetAwaiter().GetResult();
-
-            return new Result
+            X509Certificate2 serverCert = null;
+            try
             {
-                Success = true,
-                Output = messages.ToArray(),
-                Error = null,
-            };
+                if (connection.TlsMode == TlsMode.Mtls)
+                {
+                    if (string.IsNullOrEmpty(connection.ServerCertPath))
+                        throw new ArgumentException("Server certificate path is required for Mtls mode.");
+                    serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
+                }
+
+                using var host = BuildMllpHost(input, connection, options, encoding, messages, serverCert);
+
+                host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
+
+                WaitForShutdown(linkedTokenSource.Token);
+
+                host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+                return new Result
+                {
+                    Success = true,
+                    Output = messages.ToArray(),
+                    Error = null,
+                };
+            }
+            finally
+            {
+                serverCert?.Dispose();
+            }
         }
         catch (Exception ex)
         {
@@ -87,13 +102,13 @@ public static class Mllp
     private static void ValidateParameters(Input input, Connection connection, Options options)
     {
         if (input.Port is <= 0 or > 65535)
-            throw new ArgumentOutOfRangeException(nameof(input.Port), "Port must be between 1 and 65535.");
+            throw new ArgumentOutOfRangeException(nameof(input), "Port must be between 1 and 65535.");
 
         if (connection.ListenDurationSeconds <= 0)
-            throw new ArgumentOutOfRangeException(nameof(connection.ListenDurationSeconds), "Listen duration must be greater than zero.");
+            throw new ArgumentOutOfRangeException(nameof(connection), "Listen duration must be greater than zero.");
 
         if (connection.BufferSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(connection.BufferSize), "Buffer size must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(connection), "Buffer size must be positive.");
 
         _ = connection.GetEncoding();
 
@@ -106,18 +121,10 @@ public static class Mllp
         Connection connection,
         Options options,
         Encoding encoding,
-        ConcurrentQueue<string> messages)
+        ConcurrentQueue<string> messages,
+        X509Certificate2 serverCert)
     {
         var listenIp = string.IsNullOrWhiteSpace(input.ListenAddress) ? "Any" : input.ListenAddress;
-
-        X509Certificate2 serverCert = null;
-        if (connection.TlsMode == TlsMode.Mtls)
-        {
-            if (string.IsNullOrEmpty(connection.ServerCertPath))
-                throw new ArgumentException("Server certificate path is required for Mtls mode.");
-
-            serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
-        }
 
         return SuperSocketHostBuilder.Create<MllpPackage, MllpPipelineFilter>()
             .ConfigureServices((_, services) =>
