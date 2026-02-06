@@ -13,7 +13,7 @@ public class ErrorHandlerTest
     [Test]
     public void Should_Throw_Error_When_ThrowErrorOnFailure_Is_True()
     {
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var ex = Assert.Throws<Exception>(() =>
            Mllp.Receive(DefaultInput(), DefaultConnection(), DefaultOptions(), CancellationToken.None));
         Assert.That(ex, Is.Not.Null);
     }
