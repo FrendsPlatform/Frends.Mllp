@@ -41,7 +41,7 @@ public static class Mllp
             cancellationToken.ThrowIfCancellationRequested();
 
             if (string.IsNullOrWhiteSpace(input.Hl7Message))
-                throw new ArgumentException("HL7 message cannot be empty.", nameof(input.Hl7Message));
+                throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
 
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
             var message = PrepareMessage(input.Hl7Message, parser);
@@ -109,7 +109,7 @@ public static class Mllp
 
     private static string EnsureEndsWithCarriageReturn(string message)
     {
-        if (message.EndsWith("\r", StringComparison.Ordinal))
+        if (message.EndsWith('\r'))
             return message;
 
         return $"{message}\r";
