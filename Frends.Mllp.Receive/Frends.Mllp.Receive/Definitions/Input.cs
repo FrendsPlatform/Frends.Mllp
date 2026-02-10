@@ -21,6 +21,5 @@ public class Input
     /// </summary>
     /// <example>2575</example>
     [DefaultValue(2575)]
-    [Range(1, 65535)]
     public int Port { get; set; } = 2575;
 }

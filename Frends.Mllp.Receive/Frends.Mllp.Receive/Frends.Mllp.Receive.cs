@@ -55,7 +55,7 @@ public static class Mllp
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            ValidateParameters(input, connection, options);
+            ValidateParameters(input, connection);
 
             var messages = new ConcurrentQueue<string>();
             var encoding = connection.GetEncoding();
@@ -73,7 +73,7 @@ public static class Mllp
                     serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
                 }
 
-                using var host = BuildMllpHost(input, connection, options, encoding, messages, serverCert);
+                using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
 
                 host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
 
@@ -99,7 +99,7 @@ public static class Mllp
         }
     }
 
-    private static void ValidateParameters(Input input, Connection connection, Options options)
+    private static void ValidateParameters(Input input, Connection connection)
     {
         if (input.Port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(input), "Port must be between 1 and 65535.");
@@ -119,7 +119,6 @@ public static class Mllp
     private static IHost BuildMllpHost(
         Input input,
         Connection connection,
-        Options options,
         Encoding encoding,
         ConcurrentQueue<string> messages,
         X509Certificate2 serverCert)
@@ -139,9 +138,14 @@ public static class Mllp
                     return;
 
                 var ackPayload = BuildAcknowledgement(package.Payload, connection);
-                var ackMessage = string.IsNullOrEmpty(ackPayload)
-                    ? $"{StartBlock}ACK{EndBlock}{CarriageReturn}"
-                    : $"{StartBlock}{ackPayload}{EndBlock}{CarriageReturn}";
+
+                if (string.IsNullOrEmpty(ackPayload))
+                {
+                    return;
+                }
+
+                var ackMessage = $"{StartBlock}{ackPayload}{EndBlock}{CarriageReturn}";
+
                 var ackBytes = encoding.GetBytes(ackMessage);
 
                 try

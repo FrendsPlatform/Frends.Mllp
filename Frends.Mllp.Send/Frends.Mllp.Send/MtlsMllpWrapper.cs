@@ -11,8 +11,11 @@ using NHapiTools.Base.Util;
 
 internal class MtlsMllpWrapper : IDisposable
 {
-    private static readonly FieldInfo TcpField = typeof(SimpleMLLPClient).GetField("tcpClient", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo StreamToUseField = typeof(SimpleMLLPClient).GetField("streamToUse", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo TcpField = typeof(SimpleMLLPClient).GetField("tcpClient", BindingFlags.Instance | BindingFlags.NonPublic)
+        ?? throw new MissingFieldException(nameof(SimpleMLLPClient), "tcpClient");
+
+    private static readonly FieldInfo StreamToUseField = typeof(SimpleMLLPClient).GetField("streamToUse", BindingFlags.Instance | BindingFlags.NonPublic)
+        ?? throw new MissingFieldException(nameof(SimpleMLLPClient), "streamToUse");
 
     private readonly SimpleMLLPClient _client;
     private readonly Encoding _encoding;

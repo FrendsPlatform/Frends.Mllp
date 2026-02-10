@@ -1,0 +1,6 @@
+﻿services:
+  mllp-tests:
+    build:
+      context: ..
+      dockerfile: Frends.Mllp.Send.Tests/Dockerfile
+    restart: no

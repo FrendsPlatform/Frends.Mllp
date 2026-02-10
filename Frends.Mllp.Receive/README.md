@@ -32,5 +32,9 @@ Run the tests
 
 ### Third-party licenses
 
-StyleCop.Analyzer version (unmodified version 1.1.118) used to analyze code uses Apache-2.0 license, full text and
-source code can be found at https://github.com/DotNetAnalyzers/StyleCopAnalyzers
+SuperSocket used for the MLLP server implementation is licensed under the Apache-2.0 license. 
+The full license text and source code can be found at https://github.com/kerryjiang/SuperSocket.
+
+### StyleCop.Analyzers Version
+
+This project uses StyleCop.Analyzers 1.2.0-beta.556, as recommended by the author, to get the latest fixes and improvements not available in the last stable release.

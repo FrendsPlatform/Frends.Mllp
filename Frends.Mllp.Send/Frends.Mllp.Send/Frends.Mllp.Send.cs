@@ -1,18 +1,11 @@
 ﻿using System;
 using System.ComponentModel;
-using System.IO;
-using System.Net.Http;
-using System.Net.Security;
-using System.Net.Sockets;
-using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using Frends.Mllp.Send.Definitions;
 using Frends.Mllp.Send.Helpers;
 using NHapi.Base.Parser;
-using NHapiTools.Base.Net;
-using NHapiTools.Base.Util;
 
 namespace Frends.Mllp.Send;
 
@@ -49,33 +42,40 @@ public static class Mllp
             var receiveTimeoutMs = (int)TimeSpan.FromSeconds(connection.ReadTimeoutSeconds).TotalMilliseconds;
 
             var acknowledgement = string.Empty;
-            using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, connectTimeoutMs))
+            X509Certificate2 clientCert = null;
+            try
             {
-                if (connection.TlsMode == TlsMode.Mtls)
+                using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, connectTimeoutMs))
                 {
-                    if (string.IsNullOrEmpty(connection.ClientCertPath))
-                        throw new Exception("mTLS is enabled but client certificate path is missing.");
+                    if (connection.TlsMode == TlsMode.Mtls)
+                    {
+                        if (string.IsNullOrEmpty(connection.ClientCertPath))
+                            throw new Exception("mTLS is enabled but client certificate path is missing.");
 
-                    using var clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
+                        clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
+                        wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors);
+                    }
 
-                    wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors);
+                    if (options.ExpectAcknowledgement)
+                    {
+                        acknowledgement = wrapper.Send(message, receiveTimeoutMs);
+                    }
+                    else
+                    {
+                        wrapper.SendOnly(message);
+                    }
+
+                    return new Result
+                    {
+                        Success = true,
+                        Output = acknowledgement,
+                        Error = null,
+                    };
                 }
-
-                if (options.ExpectAcknowledgement)
-                {
-                    acknowledgement = wrapper.Send(message, receiveTimeoutMs);
-                }
-                else
-                {
-                    wrapper.SendOnly(message);
-                }
-
-                return new Result
-                {
-                    Success = true,
-                    Output = acknowledgement,
-                    Error = null,
-                };
+            }
+            finally
+            {
+                clientCert?.Dispose();
             }
         }
         catch (Exception ex)

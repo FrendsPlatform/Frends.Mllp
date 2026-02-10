@@ -37,7 +37,6 @@ public class Connection
     /// </summary>
     /// <example>30</example>
     [DefaultValue(30)]
-    [Range(1, int.MaxValue)]
     public int ListenDurationSeconds { get; set; } = 30;
 
     /// <summary>
@@ -45,7 +44,6 @@ public class Connection
     /// </summary>
     /// <example>8192</example>
     [DefaultValue(8192)]
-    [Range(256, int.MaxValue)]
     public int BufferSize { get; set; } = 8192;
 
     /// <summary>

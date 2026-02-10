@@ -56,20 +56,20 @@ public class FunctionalTests
         var sender1 = Task.Run(async () =>
         {
             await Task.Delay(50);
-            await SendMessageAsync(port, "MSG|ONE");
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
         var sender2 = Task.Run(async () =>
         {
             await Task.Delay(150);
-            await SendMessageAsync(port, "MSG|TWO");
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
         var result = Mllp.Receive(input, connection, options, CancellationToken.None);
         Task.WaitAll(sender1, sender2);
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Is.EquivalentTo(new[] { "MSG|ONE", "MSG|TWO" }));
+        Assert.That(result.Output, Is.EquivalentTo(new[] { "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5", "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5" }));
     }
 
     [Test]
@@ -157,7 +157,7 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldFail_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
+    public void ShouldNotReceiveMessage_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -179,13 +179,7 @@ public class FunctionalTests
 
         var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
-        try
-        {
-            sender.Wait(TimeSpan.FromSeconds(1));
-        }
-        catch
-        {
-        }
+        Assert.ThrowsAsync<IOException>(async () => await sender);
 
         Assert.That(result.Output, Is.Empty);
     }
@@ -245,7 +239,7 @@ public class FunctionalTests
         if (!string.IsNullOrEmpty(clientCertPath))
         {
             var sslStream = new SslStream(stream, false, (sender, cert, chain, errors) => true);
-            var clientCert = new X509Certificate2(clientCertPath, password);
+            using var clientCert = new X509Certificate2(clientCertPath, password);
             var clientCerts = new X509Certificate2Collection(clientCert);
 
             await sslStream.AuthenticateAsClientAsync("localhost", clientCerts, SslProtocols.Tls12, false);
@@ -264,7 +258,12 @@ public class FunctionalTests
         if (read <= 0) return string.Empty;
 
         var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
-        return StripMllpFrame(ackPayload);
+        var result = StripMllpFrame(ackPayload);
+
+        if (stream is SslStream ssl)
+            ssl.Dispose();
+
+        return result;
     }
 
     private static string StripMllpFrame(string framed)

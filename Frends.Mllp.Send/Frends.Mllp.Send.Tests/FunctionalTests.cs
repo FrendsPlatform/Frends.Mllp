@@ -13,13 +13,12 @@ using NUnit.Framework;
 
 namespace Frends.Mllp.Send.Tests
 {
-    /// MTLS TESTING: These tests require a trusted certificate environment.
-    /// To run locally without installing certs on Windows, use Docker from the solution root:
-    /// 1. docker build -t mllp-tests -f Frends.Mllp.Send.Tests/Dockerfile .
-    /// 2. docker run --rm mllp-tests
     /// <summary>
-    ///  MTLS TESTING: These tests require a trusted certificate environment.
-    /// </summary>ws trust store limits.
+    /// MTLS TESTING: These tests require a trusted certificate environment.
+    /// To run locally without installing certificates on your host machine, use Docker Compose:
+    /// 1. Navigate to the Frends.Mllp.Send.Tests directory.
+    /// 2. Run: docker-compose up --build
+    /// </summary>
     [TestFixture]
     public class FunctionalTests
     {
@@ -165,7 +164,7 @@ namespace Frends.Mllp.Send.Tests
 
             var options = new Options { ExpectAcknowledgement = true };
             var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var result = Mllp.Send(input, connection, new Options { ExpectAcknowledgement = true }, CancellationToken.None);
+            var result = Mllp.Send(input, connection, options, CancellationToken.None);
 
             Assert.That(result.Success, Is.True);
             Assert.That(result.Output, Is.Not.Null);
