@@ -10,7 +10,7 @@ public class Error
     /// <summary>
     /// Summary of the error.
     /// </summary>
-    /// <example>Unable to receive message.</example>
+    /// <example>Unable to receive HL7 message.</example>
     public string Message { get; set; }
 
     /// <summary>
