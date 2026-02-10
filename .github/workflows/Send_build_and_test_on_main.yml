@@ -17,5 +17,9 @@ jobs:
       strict_analyzers: true
       prebuild_command: |
         docker-compose -f Frends.Mllp.Send.Tests/docker-compose.yml up --build --exit-code-from mllp-tests
+        
+        sudo cp Frends.Mllp.Send.Tests/TestData/server.crt /usr/local/share/ca-certificates/
+        sudo cp Frends.Mllp.Send.Tests/TestData/client.crt /usr/local/share/ca-certificates/
+        sudo update-ca-certificates
     secrets:
       badge_service_api_key: ${{ secrets.BADGE_SERVICE_API_KEY }}
