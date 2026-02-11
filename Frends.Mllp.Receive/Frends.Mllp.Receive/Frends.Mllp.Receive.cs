@@ -36,7 +36,6 @@ public static class Mllp
     private const byte StartBlockByte = 0x0b;
     private const byte EndBlockByte = 0x1c;
     private const byte CarriageReturnByte = 0x0d;
-    private static readonly TimeSpan ServerShutdownGracePeriod = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Starts an MLLP server that collects incoming HL7 messages for the configured duration.
@@ -78,13 +77,13 @@ public static class Mllp
 
             try
             {
-                await host.WaitForShutdownAsync(linkedTokenSource.Token);
+                await Task.Delay(TimeSpan.FromSeconds(connection.ListenDurationSeconds), linkedTokenSource.Token);
             }
-            catch (OperationCanceledException) when (linkedTokenSource.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
             }
 
-            using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
             try
             {
