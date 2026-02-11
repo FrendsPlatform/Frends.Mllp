@@ -51,47 +51,47 @@ public static class Mllp
         [PropertyTab] Connection connection,
         [PropertyTab] Options options,
         CancellationToken cancellationToken)
+    {
+        X509Certificate2 serverCert = null;
+        try
         {
-            X509Certificate2 serverCert = null;
-            try
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateParameters(input, connection);
+
+            var messages = new ConcurrentQueue<string>();
+            var encoding = connection.GetEncoding();
+
+            using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
+
+            if (connection.TlsMode == TlsMode.Mtls)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateParameters(input, connection);
-
-                var messages = new ConcurrentQueue<string>();
-                var encoding = connection.GetEncoding();
-
-                using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
-
-                if (connection.TlsMode == TlsMode.Mtls)
-                {
-                    if (string.IsNullOrEmpty(connection.ServerCertPath))
-                        throw new ArgumentException("Server certificate path is required for Mtls mode.");
-                    serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
-                }
-
-                using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
-
-                host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
-                WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
-                host.StopAsync().GetAwaiter().GetResult();
-
-                return new Result
-                {
-                    Success = true,
-                    Output = messages.ToArray(),
-                    Error = null,
-                };
+                if (string.IsNullOrEmpty(connection.ServerCertPath))
+                    throw new ArgumentException("Server certificate path is required for Mtls mode.");
+                serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
             }
-            catch (Exception ex)
+
+            using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
+
+            host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
+            WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
+            host.StopAsync().GetAwaiter().GetResult();
+
+            return new Result
             {
-                return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
-            }
-            finally
-            {
-                serverCert?.Dispose();
-            }
+                Success = true,
+                Output = messages.ToArray(),
+                Error = null,
+            };
+        }
+        catch (Exception ex)
+        {
+            return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
+        }
+        finally
+        {
+            serverCert?.Dispose();
+        }
     }
 
     private static void ValidateParameters(Input input, Connection connection)
