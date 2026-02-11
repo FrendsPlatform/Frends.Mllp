@@ -75,7 +75,7 @@ public static class Mllp
 
             host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
             WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
-            host.StopAsync().GetAwaiter().GetResult();
+            host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
 
             return new Result
             {
