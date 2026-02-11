@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Frends.Mllp.Receive.Definitions;
 using NUnit.Framework;
 
@@ -13,17 +14,17 @@ public class ErrorHandlerTest
     [Test]
     public void Should_Throw_Error_When_ThrowErrorOnFailure_Is_True()
     {
-        var ex = Assert.Throws<Exception>(() =>
+        var ex = Assert.ThrowsAsync<Exception>(() =>
            Mllp.Receive(DefaultInput(), DefaultConnection(), DefaultOptions(), CancellationToken.None));
         Assert.That(ex, Is.Not.Null);
     }
 
     [Test]
-    public void Should_Return_Failed_Result_When_ThrowErrorOnFailure_Is_False()
+    public async Task Should_Return_Failed_Result_When_ThrowErrorOnFailure_Is_False()
     {
         var options = DefaultOptions();
         options.ThrowErrorOnFailure = false;
-        var result = Mllp.Receive(DefaultInput(), DefaultConnection(), options, CancellationToken.None);
+        var result = await Mllp.Receive(DefaultInput(), DefaultConnection(), options, CancellationToken.None);
         Assert.That(result.Success, Is.False);
     }
 
@@ -32,7 +33,7 @@ public class ErrorHandlerTest
     {
         var options = DefaultOptions();
         options.ErrorMessageOnFailure = CustomErrorMessage;
-        var ex = Assert.Throws<Exception>(() =>
+        var ex = Assert.ThrowsAsync<Exception>(() =>
             Mllp.Receive(DefaultInput(), DefaultConnection(), options, CancellationToken.None));
         Assert.That(ex, Is.Not.Null);
         Assert.That(ex.Message, Contains.Substring(CustomErrorMessage));

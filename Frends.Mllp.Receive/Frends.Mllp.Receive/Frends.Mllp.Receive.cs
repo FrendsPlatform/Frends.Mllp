@@ -9,6 +9,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Frends.Mllp.Receive.Definitions;
 using Frends.Mllp.Receive.Helpers;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,7 +47,7 @@ public static class Mllp
     /// <param name="options">Additional parameters.</param>
     /// <param name="cancellationToken">A cancellation token provided by Frends Platform.</param>
     /// <returns>object { bool Success, string[] Output, object Error { string Message, Exception AdditionalInfo } }</returns>
-    public static Result Receive(
+    public static async Task<Result> Receive(
         [PropertyTab] Input input,
         [PropertyTab] Connection connection,
         [PropertyTab] Options options,
@@ -73,9 +74,25 @@ public static class Mllp
 
             using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
 
-            host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
-            WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
-            host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+            await host.StartAsync(cancellationToken);
+
+            try
+            {
+                await host.WaitForShutdownAsync(linkedTokenSource.Token);
+            }
+            catch (OperationCanceledException) when (linkedTokenSource.IsCancellationRequested)
+            {
+            }
+
+            using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            try
+            {
+                await host.StopAsync(stopCts.Token);
+            }
+            catch (InvalidOperationException)
+            {
+            }
 
             return new Result
             {
@@ -210,21 +227,6 @@ public static class Mllp
         catch
         {
             return string.Empty;
-        }
-    }
-
-    private static void WaitForShutdown(int listenDurationSeconds, CancellationToken cancellationToken)
-    {
-        var timeout = TimeSpan.FromSeconds(listenDurationSeconds).Add(ServerShutdownGracePeriod);
-
-        try
-        {
-            if (!cancellationToken.WaitHandle.WaitOne(timeout))
-            {
-            }
-        }
-        catch (ObjectDisposedException)
-        {
         }
     }
 

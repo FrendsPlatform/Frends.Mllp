@@ -24,7 +24,7 @@ public class FunctionalTests
     private string _password = "password";
 
     [Test]
-    public void ShouldReceiveSingleMessageWithinListenWindow()
+    public async Task ShouldReceiveSingleMessageWithinListenWindow()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -37,7 +37,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
         sender.Wait();
 
         Assert.That(result.Success, Is.True);
@@ -46,7 +46,7 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldReceiveMultipleMessagesFromMultipleClients()
+    public async Task ShouldReceiveMultipleMessagesFromMultipleClients()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -65,7 +65,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
         Task.WaitAll(sender1, sender2);
 
         Assert.That(result.Success, Is.True);
@@ -73,21 +73,21 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldReturnEmptyWhenNoMessagesArrive()
+    public async Task ShouldReturnEmptyWhenNoMessagesArrive()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
         var connection = new Connection { ListenDurationSeconds = 1 };
         var options = new Options { };
 
-        var result = Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Is.Empty);
     }
 
     [Test]
-    public void ShouldSendProperAck()
+    public async Task ShouldSendProperAck()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -100,7 +100,7 @@ public class FunctionalTests
             return await SendMessageAsync(port, "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5");
         });
 
-        var result = Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
         var ack = ackTask.Result;
 
         Assert.That(result.Success, Is.True);
@@ -121,7 +121,7 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldReceiveMessageViaMtls()
+    public async Task ShouldReceiveMessageViaMtls()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -142,7 +142,7 @@ public class FunctionalTests
             return await SendMessageAsync(port, "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|123|P|2.5", _clientPfxPath, _password);
         });
 
-        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
         var ack = sender.Result;
 
         Assert.Multiple(() =>
@@ -157,7 +157,7 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldNotReceiveMessage_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
+    public async Task ShouldNotReceiveMessage_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -177,7 +177,7 @@ public class FunctionalTests
             return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
         });
 
-        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
         Assert.ThrowsAsync<IOException>(async () => await sender);
 
@@ -185,7 +185,7 @@ public class FunctionalTests
     }
 
     [Test]
-    public void ShouldSucceed_WhenClientCertIsUntrusted_ButIgnoreIsTrue()
+    public async Task ShouldSucceed_WhenClientCertIsUntrusted_ButIgnoreIsTrue()
     {
         var port = GetAvailablePort();
         var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
@@ -204,7 +204,7 @@ public class FunctionalTests
             return await SendMessageAsync(port, "MSG|ACCEPTED_BY_IGNORE", _clientPfxPath, _password);
         });
 
-        var result = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
         sender.Wait(TimeSpan.FromSeconds(1));
 
