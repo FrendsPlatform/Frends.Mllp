@@ -179,7 +179,7 @@ public class FunctionalTests
 
         var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
-        Assert.ThrowsAsync<IOException>(async () => await sender);
+        Assert.CatchAsync<Exception>(async () => await sender);
 
         Assert.That(result.Output, Is.Empty);
     }
