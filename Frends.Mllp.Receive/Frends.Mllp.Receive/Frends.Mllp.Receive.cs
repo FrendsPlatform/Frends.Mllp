@@ -35,6 +35,7 @@ public static class Mllp
     private const byte StartBlockByte = 0x0b;
     private const byte EndBlockByte = 0x1c;
     private const byte CarriageReturnByte = 0x0d;
+    private static readonly TimeSpan ServerShutdownGracePeriod = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Starts an MLLP server that collects incoming HL7 messages for the configured duration.
@@ -77,7 +78,7 @@ public static class Mllp
 
                 host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
 
-                WaitForShutdown(linkedTokenSource.Token);
+                WaitForShutdown(linkedTokenSource.Token, connection.ListenDurationSeconds);
 
                 host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
 
@@ -218,15 +219,18 @@ public static class Mllp
         }
     }
 
-    private static void WaitForShutdown(CancellationToken cancellationToken)
+    private static void WaitForShutdown(CancellationToken cancellationToken, int listenDurationSeconds)
     {
+        var timeout = TimeSpan.FromSeconds(listenDurationSeconds).Add(ServerShutdownGracePeriod);
+
         try
         {
-            cancellationToken.WaitHandle.WaitOne();
+            if (!cancellationToken.WaitHandle.WaitOne(timeout))
+            {
+            }
         }
         catch (ObjectDisposedException)
         {
-            // If the token source is already disposed, we are done waiting.
         }
     }
 
