@@ -78,7 +78,7 @@ public static class Mllp
 
                 host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
 
-                WaitForShutdown(linkedTokenSource.Token, connection.ListenDurationSeconds);
+                WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
 
                 host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
 
@@ -219,7 +219,7 @@ public static class Mllp
         }
     }
 
-    private static void WaitForShutdown(CancellationToken cancellationToken, int listenDurationSeconds)
+    private static void WaitForShutdown(int listenDurationSeconds, CancellationToken cancellationToken)
     {
         var timeout = TimeSpan.FromSeconds(listenDurationSeconds).Add(ServerShutdownGracePeriod);
 
