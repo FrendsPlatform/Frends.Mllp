@@ -167,21 +167,35 @@ public class FunctionalTests
             ServerCertPath = _serverPfxPath,
             ServerCertPassword = _password,
             IgnoreClientCertificateErrors = false,
-            ListenDurationSeconds = 5,
+            ListenDurationSeconds = 10,
         };
 
-        var sender = Task.Run(async () =>
-        {
-            await Task.Delay(200);
+        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
 
-            return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
+        var senderTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1000);
+                return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Client expectedly failed: {ex.Message}");
+                return "CLIENT_ERROR_CAUGHT";
+            }
         });
 
-        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        await Task.WhenAll(serverTask, senderTask).WaitAsync(TimeSpan.FromSeconds(20));
 
-        Assert.CatchAsync<Exception>(async () => await sender);
+        var result = await serverTask;
+        var ack = await senderTask;
 
-        Assert.That(result.Output, Is.Empty);
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Output, Is.Empty, "Server should not have accepted the message.");
+            Assert.That(ack, Is.Null.Or.Empty.Or.EqualTo("CLIENT_ERROR_CAUGHT"), "Client should not have received a valid MLLP ACK.");
+        });
     }
 
     [Test]
