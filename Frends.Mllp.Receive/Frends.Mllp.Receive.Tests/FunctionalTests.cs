@@ -219,51 +219,56 @@ public class FunctionalTests
     private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
     {
         using var client = new TcpClient();
-        var attempts = 0;
-        while (true)
+
+        for (int i = 0; i < 10; i++)
         {
             try
             {
                 await client.ConnectAsync(IPAddress.Loopback, port);
                 break;
             }
-            catch (SocketException) when (attempts < 5)
+            catch (SocketException)
             {
-                attempts++;
-                await Task.Delay(100);
+                if (i == 9) throw;
+                await Task.Delay(200);
             }
         }
 
-        Stream stream = client.GetStream();
+        Stream baseStream = client.GetStream();
+        SslStream sslStream = null;
 
-        if (!string.IsNullOrEmpty(clientCertPath))
+        try
         {
-            var sslStream = new SslStream(stream, false, (sender, cert, chain, errors) => true);
-            using var clientCert = new X509Certificate2(clientCertPath, password);
-            var clientCerts = new X509Certificate2Collection(clientCert);
+            Stream currentStream = baseStream;
 
-            await sslStream.AuthenticateAsClientAsync("localhost", clientCerts, SslProtocols.Tls12, false);
-            stream = sslStream;
+            if (!string.IsNullOrEmpty(clientCertPath))
+            {
+                sslStream = new SslStream(baseStream, false, (sender, cert, chain, errors) => true);
+                using var clientCert = new X509Certificate2(clientCertPath, password);
+                var clientCerts = new X509Certificate2Collection(clientCert);
+
+                await sslStream.AuthenticateAsClientAsync("localhost", clientCerts, SslProtocols.Tls12, false);
+                currentStream = sslStream;
+            }
+
+            var payload = $"\u000b{message}\u001c\r";
+            var bytes = Encoding.UTF8.GetBytes(payload);
+
+            await currentStream.WriteAsync(bytes, 0, bytes.Length);
+            await currentStream.FlushAsync();
+
+            var buffer = new byte[4096];
+            var read = await currentStream.ReadAsync(buffer, 0, buffer.Length);
+
+            if (read <= 0) return string.Empty;
+
+            var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
+            return StripMllpFrame(ackPayload);
         }
-
-        var payload = $"\u000b{message}\u001c\r";
-        var bytes = Encoding.UTF8.GetBytes(payload);
-
-        await stream.WriteAsync(bytes, 0, bytes.Length);
-        await stream.FlushAsync();
-
-        var buffer = new byte[2048];
-        var read = await stream.ReadAsync(buffer, 0, buffer.Length);
-
-        if (read <= 0) return string.Empty;
-
-        var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
-        var result = StripMllpFrame(ackPayload);
-
-        if (stream is SslStream ssl)
-            ssl.Dispose();
-
-        return result;
+        finally
+        {
+            sslStream?.Dispose();
+        }
     }
 
     private static string StripMllpFrame(string framed)
