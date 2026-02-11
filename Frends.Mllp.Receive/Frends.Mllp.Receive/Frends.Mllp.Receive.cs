@@ -51,22 +51,19 @@ public static class Mllp
         [PropertyTab] Connection connection,
         [PropertyTab] Options options,
         CancellationToken cancellationToken)
-    {
-        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            ValidateParameters(input, connection);
-
-            var messages = new ConcurrentQueue<string>();
-            var encoding = connection.GetEncoding();
-
-            using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
-
             X509Certificate2 serverCert = null;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                ValidateParameters(input, connection);
+
+                var messages = new ConcurrentQueue<string>();
+                var encoding = connection.GetEncoding();
+
+                using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
+
                 if (connection.TlsMode == TlsMode.Mtls)
                 {
                     if (string.IsNullOrEmpty(connection.ServerCertPath))
@@ -77,10 +74,8 @@ public static class Mllp
                 using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
 
                 host.StartAsync(linkedTokenSource.Token).GetAwaiter().GetResult();
-
                 WaitForShutdown(connection.ListenDurationSeconds, linkedTokenSource.Token);
-
-                host.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+                host.StopAsync().GetAwaiter().GetResult();
 
                 return new Result
                 {
@@ -89,15 +84,14 @@ public static class Mllp
                     Error = null,
                 };
             }
+            catch (Exception ex)
+            {
+                return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
+            }
             finally
             {
                 serverCert?.Dispose();
             }
-        }
-        catch (Exception ex)
-        {
-            return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
-        }
     }
 
     private static void ValidateParameters(Input input, Connection connection)
