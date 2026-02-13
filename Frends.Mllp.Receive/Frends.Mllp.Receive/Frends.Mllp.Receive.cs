@@ -61,9 +61,6 @@ public static class Mllp
             var messages = new ConcurrentQueue<string>();
             var encoding = connection.GetEncoding();
 
-            using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedTokenSource.CancelAfter(TimeSpan.FromSeconds(connection.ListenDurationSeconds));
-
             if (connection.TlsMode == TlsMode.Mtls)
             {
                 if (string.IsNullOrEmpty(connection.ServerCertPath))
@@ -77,17 +74,15 @@ public static class Mllp
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(connection.ListenDurationSeconds), linkedTokenSource.Token);
+                await Task.Delay(TimeSpan.FromSeconds(connection.ListenDurationSeconds), cancellationToken);
             }
             catch (OperationCanceledException)
             {
             }
 
-            using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
             try
             {
-                await host.StopAsync(stopCts.Token);
+                await host.StopAsync(cancellationToken);
             }
             catch (InvalidOperationException)
             {

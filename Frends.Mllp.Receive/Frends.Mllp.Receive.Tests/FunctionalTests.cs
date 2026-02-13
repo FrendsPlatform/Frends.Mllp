@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -232,6 +233,48 @@ public class FunctionalTests
             Assert.That(result.Output.First(), Is.EqualTo("MSG|ACCEPTED_BY_IGNORE"));
             Assert.That(ack, Is.Not.Null);
         });
+    }
+
+    [Test]
+    public async Task Test_CheckIfStopAsyncHangsWithActiveZombieClient()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection
+        {
+            TlsMode = TlsMode.None,
+            ListenDurationSeconds = 2,
+        };
+
+        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+
+        var zombieTask = Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            byte[] startByte = { 0x0b };
+            await stream.WriteAsync(startByte, 0, startByte.Length);
+
+            await Task.Delay(20000);
+        });
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await serverTask.WaitAsync(TimeSpan.FromSeconds(15));
+            sw.Stop();
+            Console.WriteLine($"Server stopped after: {sw.Elapsed.TotalSeconds}s");
+        }
+        catch (TimeoutException)
+        {
+            sw.Stop();
+            Assert.Fail($"TEST FAILED: Server hangs at StopAsync! " +
+                        $"Time elapsed {sw.Elapsed.TotalSeconds} and didnt stopped.");
+        }
     }
 
     private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
