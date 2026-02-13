@@ -1,0 +1,26 @@
+name: Send_build_test
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'Frends.Mllp.Send/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: FrendsPlatform/FrendsTasks/.github/workflows/linux_build_test.yml@main
+    with:
+      workdir: Frends.Mllp.Send
+      dotnet_version: 8.0.x
+      strict_analyzers: true
+      prebuild_command: |
+        docker-compose -f Frends.Mllp.Send.Tests/docker-compose.yml up --build --exit-code-from mllp-tests
+        
+        sudo cp Frends.Mllp.Send.Tests/TestData/server.crt /usr/local/share/ca-certificates/
+        sudo cp Frends.Mllp.Send.Tests/TestData/client.crt /usr/local/share/ca-certificates/
+        sudo update-ca-certificates
+    secrets:
+      badge_service_api_key: ${{ secrets.BADGE_SERVICE_API_KEY }}
+      test_feed_api_key: ${{ secrets.TASKS_TEST_FEED_API_KEY }}
