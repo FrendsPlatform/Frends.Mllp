@@ -170,6 +170,48 @@ namespace Frends.Mllp.Send.Tests
             Assert.That(result.Output, Is.Not.Null);
         }
 
+        [Test]
+        public async Task ShouldSendWithUtf8Encoding()
+        {
+            SetupServerLogic(requireTls: false);
+
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+                Encoding = "UTF-8",
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+
+            var result = Mllp.Send(input, connection, new Options { ExpectAcknowledgement = true }, CancellationToken.None);
+            var receivedByServer = await _serverTask;
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output, Does.Contain("MSA|AA"));
+            Assert.That(receivedByServer, Is.Not.Null);
+        }
+
+        [Test]
+        public void ShouldThrowOnInvalidEncoding()
+        {
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+                Encoding = "not-a-valid-encoding",
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options { ThrowErrorOnFailure = true };
+
+            Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
+        }
+
         private void SetupServerLogic(bool requireTls)
         {
             _serverTask = Task.Run(async () =>
