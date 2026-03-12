@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 
 namespace Frends.Mllp.Send.Definitions;
 
@@ -67,4 +68,13 @@ public class Connection
     /// <example>false</example>
     [DefaultValue(false)]
     public bool IgnoreServerCertificateErrors { get; set; } = false;
+
+    /// <summary>
+    /// Encoding used to encode the HL7 message before sending.
+    /// </summary>
+    /// <example>UTF-8</example>
+    [DefaultValue("UTF-8")]
+    public string Encoding { get; set; } = "UTF-8";
+
+    internal Encoding GetEncoding() => System.Text.Encoding.GetEncoding(Encoding);
 }

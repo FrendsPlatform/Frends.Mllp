@@ -45,7 +45,7 @@ public static class Mllp
             X509Certificate2 clientCert = null;
             try
             {
-                using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, Encoding.ASCII, connectTimeoutMs))
+                using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, connection.GetEncoding(), connectTimeoutMs))
                 {
                     if (connection.TlsMode == TlsMode.Mtls)
                     {
