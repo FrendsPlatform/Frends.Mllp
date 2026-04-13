@@ -56,10 +56,10 @@ public static class Mllp
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateParameters(input, connection);
+            ValidateParameters(input, connection, options);
 
             var messages = new ConcurrentQueue<string>();
-            var encoding = connection.GetEncoding();
+            var encoding = options.GetEncoding();
 
             if (connection.TlsMode == TlsMode.Mtls)
             {
@@ -105,7 +105,7 @@ public static class Mllp
         }
     }
 
-    private static void ValidateParameters(Input input, Connection connection)
+    private static void ValidateParameters(Input input, Connection connection, Options options)
     {
         if (input.Port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(input), "Port must be between 1 and 65535.");
@@ -116,7 +116,7 @@ public static class Mllp
         if (connection.BufferSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(connection), "Buffer size must be positive.");
 
-        _ = connection.GetEncoding();
+        _ = options.GetEncoding();
 
         if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
