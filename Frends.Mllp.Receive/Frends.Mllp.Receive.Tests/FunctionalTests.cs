@@ -28,9 +28,17 @@ public class FunctionalTests
     public async Task ShouldReceiveSingleMessageWithinListenWindow()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options();
 
         var sender = Task.Run(async () =>
         {
@@ -50,9 +58,17 @@ public class FunctionalTests
     public async Task ShouldReceiveMultipleMessagesFromMultipleClients()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options();
 
         var sender1 = Task.Run(async () =>
         {
@@ -70,16 +86,27 @@ public class FunctionalTests
         await Task.WhenAll(sender1, sender2);
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Is.EquivalentTo(new[] { "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5", "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5" }));
+        Assert.That(result.Output, Is.EquivalentTo(new[]
+        {
+            "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5",
+            "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5",
+        }));
     }
 
     [Test]
     public async Task ShouldReturnEmptyWhenNoMessagesArrive()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5 };
-        var options = new Options { };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+        };
+        var options = new Options();
 
         var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
 
@@ -91,14 +118,25 @@ public class FunctionalTests
     public async Task ShouldSendProperAck()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options();
 
         var ackTask = Task.Run(async () =>
         {
             await Task.Delay(50);
-            return await SendMessageAsync(port, "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5");
+
+            return await SendMessageAsync(
+                port,
+                "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5");
         });
 
         var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
@@ -125,7 +163,11 @@ public class FunctionalTests
     public async Task ShouldReceiveMessageViaMtls()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
         var connection = new Connection
         {
             TlsMode = TlsMode.Mtls,
@@ -136,12 +178,21 @@ public class FunctionalTests
             BufferSize = 1024,
         };
 
-        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var serverTask = Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
 
         var senderTask = Task.Run(async () =>
         {
             await Task.Delay(500);
-            return await SendMessageAsync(port, "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|123|P|2.5", _clientPfxPath, _password);
+
+            return await SendMessageAsync(
+                port,
+                "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|123|P|2.5",
+                _clientPfxPath,
+                _password);
         });
 
         var ack = await senderTask;
@@ -150,10 +201,18 @@ public class FunctionalTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|SENDER"));
-            Assert.That(ack, Is.Not.Null.And.Not.Empty);
-            Assert.That(ack, Does.Contain("MSA|AA"));
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output.First(),
+                Does.Contain("MSH|^~\\&|SENDER"));
+            Assert.That(
+                ack,
+                Is.Not.Null.And.Not.Empty);
+            Assert.That(
+                ack,
+                Does.Contain("MSA|AA"));
         });
     }
 
@@ -161,7 +220,11 @@ public class FunctionalTests
     public async Task ShouldNotReceiveMessage_WhenClientCertIsUntrusted_AndIgnoreIsFalse()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
         var connection = new Connection
         {
             TlsMode = TlsMode.Mtls,
@@ -178,11 +241,13 @@ public class FunctionalTests
             try
             {
                 await Task.Delay(1000);
+
                 return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Client expectedly failed: {ex.Message}");
+
                 return "CLIENT_ERROR_CAUGHT";
             }
         });
@@ -195,7 +260,10 @@ public class FunctionalTests
         Assert.Multiple(() =>
         {
             Assert.That(result.Output, Is.Empty, "Server should not have accepted the message.");
-            Assert.That(ack, Is.Null.Or.Empty.Or.EqualTo("CLIENT_ERROR_CAUGHT"), "Client should not have received a valid MLLP ACK.");
+            Assert.That(
+                ack,
+                Is.Null.Or.Empty.Or.EqualTo("CLIENT_ERROR_CAUGHT"),
+                "Client should not have received a valid MLLP ACK.");
         });
     }
 
@@ -203,7 +271,11 @@ public class FunctionalTests
     public async Task ShouldSucceed_WhenClientCertIsUntrusted_ButIgnoreIsTrue()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
         var connection = new Connection
         {
             TlsMode = TlsMode.Mtls,
@@ -218,6 +290,7 @@ public class FunctionalTests
         var senderTask = Task.Run(async () =>
         {
             await Task.Delay(500);
+
             return await SendMessageAsync(port, "MSG|ACCEPTED_BY_IGNORE", _clientPfxPath, _password);
         });
 
@@ -239,7 +312,11 @@ public class FunctionalTests
     public async Task Test_CheckIfStopAsyncHangsWithActiveZombieClient()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
         var connection = new Connection
         {
             TlsMode = TlsMode.None,
@@ -255,7 +332,10 @@ public class FunctionalTests
             await client.ConnectAsync(IPAddress.Loopback, port);
             using var stream = client.GetStream();
 
-            byte[] startByte = { 0x0b };
+            byte[] startByte =
+            {
+                0x0b,
+            };
             await stream.WriteAsync(startByte, 0, startByte.Length);
 
             await Task.Delay(20000);
@@ -281,9 +361,17 @@ public class FunctionalTests
     public async Task ShouldReceiveMessageWithUtf8Encoding()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { MessageEncoding = FileEncoding.UTF8 };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            Encoding = FileEncoding.UTF8,
+        };
 
         var sender = Task.Run(async () =>
         {
@@ -291,7 +379,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
         await sender;
 
         Assert.That(result.Success, Is.True);
@@ -303,9 +391,17 @@ public class FunctionalTests
     public async Task ShouldReceiveMessageWithAsciiEncoding()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { MessageEncoding = FileEncoding.ASCII };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            Encoding = FileEncoding.ASCII,
+        };
 
         var sender = Task.Run(async () =>
         {
@@ -313,7 +409,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
         await sender;
 
         Assert.That(result.Success, Is.True);
@@ -325,9 +421,18 @@ public class FunctionalTests
     public async Task ShouldReceiveMessageWithOtherEncodingAsString()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { MessageEncoding = FileEncoding.Other, EncodingInString = "iso-8859-1" };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            Encoding = FileEncoding.Other,
+            EncodingInString = "iso-8859-1",
+        };
 
         var sender = Task.Run(async () =>
         {
@@ -335,7 +440,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
         await sender;
 
         Assert.That(result.Success, Is.True);
@@ -344,16 +449,23 @@ public class FunctionalTests
     }
 
     [Test]
-    public async Task ShouldThrowOnInvalidEncoding()
+    public void ShouldThrowOnInvalidEncoding()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5 };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            Encoding = FileEncoding.Other,
+            EncodingInString = "not-a-valid-encoding",
+        };
         var options = new Options
         {
             ThrowErrorOnFailure = true,
-            MessageEncoding = FileEncoding.Other,
-            EncodingInString = "not-a-valid-encoding",
         };
 
         var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
@@ -364,9 +476,17 @@ public class FunctionalTests
     public async Task ShouldReceiveMessageWithWindows1252Encoding()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
-        var options = new Options { MessageEncoding = FileEncoding.Windows1252 };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            Encoding = FileEncoding.Windows1252,
+        };
 
         var sender = Task.Run(async () =>
         {
@@ -374,7 +494,7 @@ public class FunctionalTests
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
         await sender;
 
         Assert.That(result.Success, Is.True);
@@ -383,30 +503,43 @@ public class FunctionalTests
     }
 
     [Test]
-    public async Task ShouldThrowOnEmptyEncodingInString()
+    public void ShouldThrowOnEmptyEncodingInString()
     {
         var port = GetAvailablePort();
-        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
-        var connection = new Connection { ListenDurationSeconds = 5 };
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            Encoding = FileEncoding.Other,
+            EncodingInString = string.Empty,
+        };
         var options = new Options
         {
             ThrowErrorOnFailure = true,
-            MessageEncoding = FileEncoding.Other,
-            EncodingInString = string.Empty,
         };
 
         var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
         Assert.That(ex.Message, Does.Contain("EncodingInString"));
     }
 
-    private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
+    private static async Task<string> SendMessageAsync(
+        int port,
+        string message,
+        string clientCertPath = null,
+        string password = null)
     {
         using var client = new TcpClient();
+
         for (int i = 0; i < 10; i++)
         {
             try
             {
                 await client.ConnectAsync(IPAddress.Loopback, port);
+
                 break;
             }
             catch (SocketException)
@@ -417,6 +550,7 @@ public class FunctionalTests
         }
 
         SslStream sslStream = null;
+
         try
         {
             Stream currentStream = client.GetStream();
@@ -434,7 +568,7 @@ public class FunctionalTests
                     ClientCertificates = clientCerts,
                     EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                     CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                    RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true,
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true,
                 };
 
                 await sslStream.AuthenticateAsClientAsync(sslOptions, CancellationToken.None);
@@ -453,19 +587,17 @@ public class FunctionalTests
             try
             {
                 var read = await currentStream.ReadAsync(buffer, 0, buffer.Length, readCts.Token);
+
                 if (read <= 0) return string.Empty;
 
                 var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
+
                 return StripMllpFrame(ackPayload);
             }
             catch (OperationCanceledException)
             {
                 return string.Empty;
             }
-        }
-        catch (Exception)
-        {
-            throw;
         }
         finally
         {
@@ -493,6 +625,7 @@ public class FunctionalTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
+
         return port;
     }
 }

@@ -22,8 +22,14 @@ namespace Frends.Mllp.Send.Tests
     [TestFixture]
     public class FunctionalTests
     {
-        private string _clientPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/client.pfx");
-        private string _serverPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/server.pfx");
+        private string _clientPfxPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            "TestData/client.pfx");
+
+        private string _serverPfxPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            "TestData/server.pfx");
+
         private string _password = "password";
 
         private TcpListener _listener;
@@ -34,7 +40,9 @@ namespace Frends.Mllp.Send.Tests
         [SetUp]
         public void StartServer()
         {
-            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener = new TcpListener(
+                IPAddress.Loopback,
+                0);
             _listener.Start();
             _port = ((IPEndPoint)_listener.LocalEndpoint).Port;
             _serverCts = new CancellationTokenSource();
@@ -61,14 +69,30 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 5,
             };
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
 
-            var result = Mllp.Send(input, connection, new Options { ExpectAcknowledgement = true }, CancellationToken.None);
+            var result = Mllp.Send(
+                input,
+                connection,
+                new Options
+                {
+                    ExpectAcknowledgement = true,
+                },
+                CancellationToken.None);
             var receivedByServer = await _serverTask;
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Does.Contain("MSA|AA"));
-            Assert.That(receivedByServer, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Does.Contain("MSA|AA"));
+            Assert.That(
+                receivedByServer,
+                Is.Not.Null);
         }
 
         [Test]
@@ -86,10 +110,24 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 5,
             };
 
-            var result = Mllp.Send(new Input { Hl7Message = Helpers.BuildTestMessage() }, connection, new Options { ExpectAcknowledgement = true }, CancellationToken.None);
+            var result = Mllp.Send(
+                new Input
+                {
+                    Hl7Message = Helpers.BuildTestMessage(),
+                },
+                connection,
+                new Options
+                {
+                    ExpectAcknowledgement = true,
+                },
+                CancellationToken.None);
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(_serverTask.Result, Does.Contain("MSG00001"));
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                _serverTask.Result,
+                Does.Contain("MSG00001"));
         }
 
         [Test]
@@ -97,7 +135,10 @@ namespace Frends.Mllp.Send.Tests
         {
             SetupServerLogic(requireTls: true);
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
 
             var connection = new Connection
             {
@@ -109,14 +150,23 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 2,
             };
 
-            var options = new Options { ExpectAcknowledgement = true };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
 
             var ex = Assert.Throws<Exception>(() =>
             {
-                Mllp.Send(input, connection, options, CancellationToken.None);
+                Mllp.Send(
+                    input,
+                    connection,
+                    options,
+                    CancellationToken.None);
             });
 
-            Assert.That(ex.Message, Is.EqualTo("mTLS is enabled but client certificate path is missing."));
+            Assert.That(
+                ex.Message,
+                Is.EqualTo("mTLS is enabled but client certificate path is missing."));
         }
 
         [Test]
@@ -135,14 +185,26 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 5,
             };
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options { ExpectAcknowledgement = true };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
             var ex = Assert.Throws<Exception>(() =>
             {
-                Mllp.Send(input, connection, options, CancellationToken.None);
+                Mllp.Send(
+                    input,
+                    connection,
+                    options,
+                    CancellationToken.None);
             });
 
-            Assert.That(ex.Message, Does.Contain("remote certificate was rejected")
+            Assert.That(
+                ex.Message,
+                Does.Contain("remote certificate was rejected")
                     .Or.Contain("RemoteCertificateValidationCallback"));
         }
 
@@ -162,12 +224,26 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 5,
             };
 
-            var options = new Options { ExpectAcknowledgement = true };
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Is.Not.Null);
         }
 
         [Test]
@@ -181,17 +257,34 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
+                Encoding = FileEncoding.UTF8,
             };
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.UTF8 };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
 
-            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
             var receivedByServer = await _serverTask;
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Does.Contain("MSA|AA"));
-            Assert.That(receivedByServer, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Does.Contain("MSA|AA"));
+            Assert.That(
+                receivedByServer,
+                Is.Not.Null);
         }
 
         [Test]
@@ -203,17 +296,24 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-            };
-
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options
-            {
-                ThrowErrorOnFailure = true,
-                MessageEncoding = FileEncoding.Other,
+                Encoding = FileEncoding.Other,
                 EncodingInString = "not-a-valid-encoding",
             };
 
-            Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ThrowErrorOnFailure = true,
+            };
+
+            Assert.Throws<Exception>(() => Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None));
         }
 
         [Test]
@@ -227,17 +327,34 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
+                Encoding = FileEncoding.ASCII,
             };
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.ASCII };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
 
-            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
             var receivedByServer = await _serverTask;
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Does.Contain("MSA|AA"));
-            Assert.That(receivedByServer, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Does.Contain("MSA|AA"));
+            Assert.That(
+                receivedByServer,
+                Is.Not.Null);
         }
 
         [Test]
@@ -251,22 +368,35 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-            };
-
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options
-            {
-                ExpectAcknowledgement = true,
-                MessageEncoding = FileEncoding.Other,
+                Encoding = FileEncoding.Other,
                 EncodingInString = "iso-8859-1",
             };
 
-            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
+
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
             var receivedByServer = await _serverTask;
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Does.Contain("MSA|AA"));
-            Assert.That(receivedByServer, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Does.Contain("MSA|AA"));
+            Assert.That(
+                receivedByServer,
+                Is.Not.Null);
         }
 
         [Test]
@@ -280,17 +410,34 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
+                Encoding = FileEncoding.Windows1252,
             };
 
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.Windows1252 };
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
 
-            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
             var receivedByServer = await _serverTask;
 
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Does.Contain("MSA|AA"));
-            Assert.That(receivedByServer, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Does.Contain("MSA|AA"));
+            Assert.That(
+                receivedByServer,
+                Is.Not.Null);
         }
 
         [Test]
@@ -302,18 +449,27 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-            };
-
-            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options
-            {
-                ThrowErrorOnFailure = true,
-                MessageEncoding = FileEncoding.Other,
+                Encoding = FileEncoding.Other,
                 EncodingInString = string.Empty,
             };
 
-            var ex = Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
-            Assert.That(ex.Message, Does.Contain("EncodingInString"));
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ThrowErrorOnFailure = true,
+            };
+
+            var ex = Assert.Throws<Exception>(() => Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None));
+            Assert.That(
+                ex.Message,
+                Does.Contain("EncodingInString"));
         }
 
         private void SetupServerLogic(bool requireTls)
@@ -327,17 +483,29 @@ namespace Frends.Mllp.Send.Tests
 
                     if (requireTls)
                     {
-                        var serverCert = new X509Certificate2(_serverPfxPath, _password);
-                        var sslStream = new SslStream(stream, false);
-                        await sslStream.AuthenticateAsServerAsync(serverCert, clientCertificateRequired: true, checkCertificateRevocation: false);
+                        var serverCert = new X509Certificate2(
+                            _serverPfxPath,
+                            _password);
+                        var sslStream = new SslStream(
+                            stream,
+                            false);
+                        await sslStream.AuthenticateAsServerAsync(
+                            serverCert,
+                            clientCertificateRequired: true,
+                            checkCertificateRevocation: false);
                         stream = sslStream;
                     }
 
-                    var received = await Helpers.ReadMllpMessage(stream, _serverCts.Token);
+                    var received = await Helpers.ReadMllpMessage(
+                        stream,
+                        _serverCts.Token);
                     var ack = Helpers.BuildAck(Helpers.ExtractControlId(received));
                     var response = Encoding.ASCII.GetBytes(MLLP.CreateMLLPMessage(ack));
 
-                    await stream.WriteAsync(response, 0, response.Length);
+                    await stream.WriteAsync(
+                        response,
+                        0,
+                        response.Length);
                     await stream.FlushAsync();
 
                     return received;

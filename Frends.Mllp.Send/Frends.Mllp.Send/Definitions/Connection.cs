@@ -72,9 +72,16 @@ public class Connection
     /// <summary>
     /// Encoding used to encode the HL7 message before sending.
     /// </summary>
-    /// <example>UTF-8</example>
-    [DefaultValue("UTF-8")]
-    public string Encoding { get; set; } = "UTF-8";
+    /// <example>FileEncoding.UTF8</example>
+    [DefaultValue(FileEncoding.UTF8)]
+    public FileEncoding Encoding { get; set; } = FileEncoding.UTF8;
 
-    internal Encoding GetEncoding() => System.Text.Encoding.GetEncoding(Encoding);
+    /// <summary>
+    /// Custom encoding name, used when MessageEncoding is set to Other.
+    /// </summary>
+    /// <example>iso-8859-1</example>
+    [UIHint(nameof(FileEncoding), "", FileEncoding.Other)]
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string EncodingInString { get; set; } = string.Empty;
 }
