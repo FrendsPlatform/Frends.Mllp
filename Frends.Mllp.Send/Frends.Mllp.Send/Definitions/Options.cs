@@ -1,6 +1,5 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Text;
 
 namespace Frends.Mllp.Send.Definitions;
 
@@ -53,45 +52,4 @@ public class Options
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     public string EncodingInString { get; set; } = string.Empty;
-
-    internal Encoding GetEncoding()
-    {
-        return MessageEncoding switch
-        {
-            FileEncoding.UTF8 => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            FileEncoding.Default => Encoding.Default,
-            FileEncoding.ASCII => Encoding.ASCII,
-            FileEncoding.Unicode => Encoding.Unicode,
-            FileEncoding.Windows1252 => GetExtendedEncoding("windows-1252"),
-            FileEncoding.Other => GetExtendedEncoding(EncodingInString),
-            _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-        };
-    }
-
-    private static Encoding GetExtendedEncoding(string name)
-    {
-        CodePagesEncodingProviderRegistrar.EnsureRegistered();
-        return Encoding.GetEncoding(name);
-    }
-
-    private static class CodePagesEncodingProviderRegistrar
-    {
-        private static readonly object Lock = new();
-        private static bool registered;
-
-        internal static void EnsureRegistered()
-        {
-            if (registered)
-                return;
-
-            lock (Lock)
-            {
-                if (!registered)
-                {
-                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                    registered = true;
-                }
-            }
-        }
-    }
 }

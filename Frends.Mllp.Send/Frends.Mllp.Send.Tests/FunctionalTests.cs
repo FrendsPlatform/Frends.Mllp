@@ -293,6 +293,29 @@ namespace Frends.Mllp.Send.Tests
             Assert.That(receivedByServer, Is.Not.Null);
         }
 
+        [Test]
+        public void ShouldThrowOnEmptyEncodingInString()
+        {
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options
+            {
+                ThrowErrorOnFailure = true,
+                MessageEncoding = FileEncoding.Other,
+                EncodingInString = string.Empty,
+            };
+
+            var ex = Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
+            Assert.That(ex.Message, Does.Contain("EncodingInString"));
+        }
+
         private void SetupServerLogic(bool requireTls)
         {
             _serverTask = Task.Run(async () =>

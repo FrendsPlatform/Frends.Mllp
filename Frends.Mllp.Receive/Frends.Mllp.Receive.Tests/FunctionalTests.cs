@@ -382,6 +382,23 @@ public class FunctionalTests
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
     }
 
+    [Test]
+    public async Task ShouldThrowOnEmptyEncodingInString()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5 };
+        var options = new Options
+        {
+            ThrowErrorOnFailure = true,
+            MessageEncoding = FileEncoding.Other,
+            EncodingInString = string.Empty,
+        };
+
+        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
+        Assert.That(ex.Message, Does.Contain("EncodingInString"));
+    }
+
     private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
     {
         using var client = new TcpClient();

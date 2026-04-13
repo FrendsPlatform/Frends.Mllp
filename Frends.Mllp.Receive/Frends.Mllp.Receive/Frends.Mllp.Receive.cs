@@ -59,7 +59,7 @@ public static class Mllp
             ValidateParameters(input, connection, options);
 
             var messages = new ConcurrentQueue<string>();
-            var encoding = options.GetEncoding();
+            var encoding = GetEncoding(options);
 
             if (connection.TlsMode == TlsMode.Mtls)
             {
@@ -116,10 +116,33 @@ public static class Mllp
         if (connection.BufferSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(connection), "Buffer size must be positive.");
 
-        _ = options.GetEncoding();
+        if (options.MessageEncoding == FileEncoding.Other && string.IsNullOrWhiteSpace(options.EncodingInString))
+            throw new ArgumentException("EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(options));
+
+        _ = GetEncoding(options);
 
         if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
+    }
+
+    private static Encoding GetEncoding(Options options)
+    {
+        return options.MessageEncoding switch
+        {
+            FileEncoding.UTF8 => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            FileEncoding.Default => Encoding.Default,
+            FileEncoding.ASCII => Encoding.ASCII,
+            FileEncoding.Unicode => Encoding.Unicode,
+            FileEncoding.Windows1252 => GetExtendedEncoding("windows-1252"),
+            FileEncoding.Other => GetExtendedEncoding(options.EncodingInString),
+            _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        };
+    }
+
+    private static Encoding GetExtendedEncoding(string name)
+    {
+        CodePagesEncodingProviderRegistrar.EnsureRegistered();
+        return Encoding.GetEncoding(name);
     }
 
     private static IHost BuildMllpHost(

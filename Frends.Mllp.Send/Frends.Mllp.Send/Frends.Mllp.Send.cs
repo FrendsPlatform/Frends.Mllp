@@ -36,6 +36,9 @@ public static class Mllp
             if (string.IsNullOrWhiteSpace(input.Hl7Message))
                 throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
 
+            if (options.MessageEncoding == FileEncoding.Other && string.IsNullOrWhiteSpace(options.EncodingInString))
+                throw new ArgumentException("EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(options));
+
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
             var message = PrepareMessage(input.Hl7Message, parser);
             var connectTimeoutMs = (int)TimeSpan.FromSeconds(connection.ConnectTimeoutSeconds).TotalMilliseconds;
@@ -45,7 +48,7 @@ public static class Mllp
             X509Certificate2 clientCert = null;
             try
             {
-                using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, options.GetEncoding(), connectTimeoutMs))
+                using (var wrapper = new MtlsMllpWrapper(connection.Host, connection.Port, GetEncoding(options), connectTimeoutMs))
                 {
                     if (connection.TlsMode == TlsMode.Mtls)
                     {
@@ -82,6 +85,26 @@ public static class Mllp
         {
             return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
         }
+    }
+
+    private static Encoding GetEncoding(Options options)
+    {
+        return options.MessageEncoding switch
+        {
+            FileEncoding.UTF8 => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            FileEncoding.Default => Encoding.Default,
+            FileEncoding.ASCII => Encoding.ASCII,
+            FileEncoding.Unicode => Encoding.Unicode,
+            FileEncoding.Windows1252 => GetExtendedEncoding("windows-1252"),
+            FileEncoding.Other => GetExtendedEncoding(options.EncodingInString),
+            _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        };
+    }
+
+    private static Encoding GetExtendedEncoding(string name)
+    {
+        CodePagesEncodingProviderRegistrar.EnsureRegistered();
+        return Encoding.GetEncoding(name);
     }
 
     private static string PrepareMessage(string hl7Message, PipeParser parser)
