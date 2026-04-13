@@ -36,4 +36,20 @@ public class Options
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     public string ErrorMessageOnFailure { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Encoding used to encode the HL7 message before sending.
+    /// </summary>
+    /// <example>FileEncoding.UTF8</example>
+    [DefaultValue(FileEncoding.UTF8)]
+    public FileEncoding MessageEncoding { get; set; } = FileEncoding.UTF8;
+
+    /// <summary>
+    /// Custom encoding name, used when MessageEncoding is set to Other.
+    /// </summary>
+    /// <example>iso-8859-1</example>
+    [UIHint(nameof(FileEncoding), "", FileEncoding.Other)]
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string EncodingInString { get; set; } = string.Empty;
 }

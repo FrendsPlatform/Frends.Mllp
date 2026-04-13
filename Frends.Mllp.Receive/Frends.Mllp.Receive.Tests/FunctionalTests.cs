@@ -277,6 +277,128 @@ public class FunctionalTests
         }
     }
 
+    [Test]
+    public async Task ShouldReceiveMessageWithUtf8Encoding()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
+        var options = new Options { MessageEncoding = FileEncoding.UTF8 };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+    }
+
+    [Test]
+    public async Task ShouldReceiveMessageWithAsciiEncoding()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
+        var options = new Options { MessageEncoding = FileEncoding.ASCII };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+    }
+
+    [Test]
+    public async Task ShouldReceiveMessageWithOtherEncodingAsString()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
+        var options = new Options { MessageEncoding = FileEncoding.Other, EncodingInString = "iso-8859-1" };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+    }
+
+    [Test]
+    public async Task ShouldThrowOnInvalidEncoding()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5 };
+        var options = new Options
+        {
+            ThrowErrorOnFailure = true,
+            MessageEncoding = FileEncoding.Other,
+            EncodingInString = "not-a-valid-encoding",
+        };
+
+        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
+        Assert.That(ex, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task ShouldReceiveMessageWithWindows1252Encoding()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5, BufferSize = 1024 };
+        var options = new Options { MessageEncoding = FileEncoding.Windows1252 };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+    }
+
+    [Test]
+    public async Task ShouldThrowOnEmptyEncodingInString()
+    {
+        var port = GetAvailablePort();
+        var input = new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port };
+        var connection = new Connection { ListenDurationSeconds = 5 };
+        var options = new Options
+        {
+            ThrowErrorOnFailure = true,
+            MessageEncoding = FileEncoding.Other,
+            EncodingInString = string.Empty,
+        };
+
+        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
+        Assert.That(ex.Message, Does.Contain("EncodingInString"));
+    }
+
     private static async Task<string> SendMessageAsync(int port, string message, string clientCertPath = null, string password = null)
     {
         using var client = new TcpClient();

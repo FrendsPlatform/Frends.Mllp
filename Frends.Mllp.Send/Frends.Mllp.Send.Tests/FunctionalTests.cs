@@ -181,12 +181,12 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-                Encoding = "UTF-8",
             };
 
             var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.UTF8 };
 
-            var result = Mllp.Send(input, connection, new Options { ExpectAcknowledgement = true }, CancellationToken.None);
+            var result = Mllp.Send(input, connection, options, CancellationToken.None);
             var receivedByServer = await _serverTask;
 
             Assert.That(result.Success, Is.True);
@@ -203,13 +203,117 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-                Encoding = "not-a-valid-encoding",
             };
 
             var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
-            var options = new Options { ThrowErrorOnFailure = true };
+            var options = new Options
+            {
+                ThrowErrorOnFailure = true,
+                MessageEncoding = FileEncoding.Other,
+                EncodingInString = "not-a-valid-encoding",
+            };
 
             Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
+        }
+
+        [Test]
+        public async Task ShouldSendWithAsciiEncoding()
+        {
+            SetupServerLogic(requireTls: false);
+
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.ASCII };
+
+            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var receivedByServer = await _serverTask;
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output, Does.Contain("MSA|AA"));
+            Assert.That(receivedByServer, Is.Not.Null);
+        }
+
+        [Test]
+        public async Task ShouldSendWithOtherEncodingAsString()
+        {
+            SetupServerLogic(requireTls: false);
+
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+                MessageEncoding = FileEncoding.Other,
+                EncodingInString = "iso-8859-1",
+            };
+
+            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var receivedByServer = await _serverTask;
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output, Does.Contain("MSA|AA"));
+            Assert.That(receivedByServer, Is.Not.Null);
+        }
+
+        [Test]
+        public async Task ShouldSendWithWindows1252Encoding()
+        {
+            SetupServerLogic(requireTls: false);
+
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options { ExpectAcknowledgement = true, MessageEncoding = FileEncoding.Windows1252 };
+
+            var result = Mllp.Send(input, connection, options, CancellationToken.None);
+            var receivedByServer = await _serverTask;
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Output, Does.Contain("MSA|AA"));
+            Assert.That(receivedByServer, Is.Not.Null);
+        }
+
+        [Test]
+        public void ShouldThrowOnEmptyEncodingInString()
+        {
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.None,
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input { Hl7Message = Helpers.BuildTestMessage() };
+            var options = new Options
+            {
+                ThrowErrorOnFailure = true,
+                MessageEncoding = FileEncoding.Other,
+                EncodingInString = string.Empty,
+            };
+
+            var ex = Assert.Throws<Exception>(() => Mllp.Send(input, connection, options, CancellationToken.None));
+            Assert.That(ex.Message, Does.Contain("EncodingInString"));
         }
 
         private void SetupServerLogic(bool requireTls)
