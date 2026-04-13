@@ -56,7 +56,28 @@ public class Options
 
     private static Encoding GetExtendedEncoding(string name)
     {
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        CodePagesEncodingProviderRegistrar.EnsureRegistered();
         return Encoding.GetEncoding(name);
+    }
+
+    private static class CodePagesEncodingProviderRegistrar
+    {
+        private static readonly object Lock = new();
+        private static bool registered;
+
+        internal static void EnsureRegistered()
+        {
+            if (registered)
+                return;
+
+            lock (Lock)
+            {
+                if (!registered)
+                {
+                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    registered = true;
+                }
+            }
+        }
     }
 }
