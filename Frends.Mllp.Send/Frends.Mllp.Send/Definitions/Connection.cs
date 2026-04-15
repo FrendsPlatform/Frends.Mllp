@@ -77,7 +77,7 @@ public class Connection
     public FileEncoding Encoding { get; set; } = FileEncoding.UTF8;
 
     /// <summary>
-    /// Custom encoding name, used when MessageEncoding is set to Other.
+    /// Custom encoding name, used when Encoding is set to Other.
     /// </summary>
     /// <example>iso-8859-1</example>
     [UIHint(nameof(FileEncoding), "", FileEncoding.Other)]

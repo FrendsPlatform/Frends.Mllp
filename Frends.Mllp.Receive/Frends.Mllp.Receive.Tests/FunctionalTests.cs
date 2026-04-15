@@ -24,6 +24,13 @@ public class FunctionalTests
     private string _serverPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/server.pfx");
     private string _password = "password";
 
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        // Required for windows-1252 and other non-built-in code-page encodings used in the sender.
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     [Test]
     public async Task ShouldReceiveSingleMessageWithinListenWindow()
     {
@@ -376,7 +383,7 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.UTF8);
         });
 
         var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
@@ -385,6 +392,7 @@ public class FunctionalTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "UTF-8 encoded 'é' must survive the round-trip.");
     }
 
     [Test]
@@ -406,7 +414,7 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.ASCII);
         });
 
         var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
@@ -415,6 +423,7 @@ public class FunctionalTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(result.Output.First(), Does.Contain("caf?"), "ASCII-encoded 'é' must arrive as the replacement character '?'.");
     }
 
     [Test]
@@ -437,7 +446,8 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+            // Encoding.Latin1 is ISO-8859-1 (built-in, no code-page registration required).
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.Latin1);
         });
 
         var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
@@ -446,6 +456,7 @@ public class FunctionalTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "ISO-8859-1 encoded 'é' (0xE9) must survive the round-trip.");
     }
 
     [Test]
@@ -491,7 +502,7 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.GetEncoding("windows-1252"));
         });
 
         var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
@@ -500,6 +511,7 @@ public class FunctionalTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "Windows-1252 encoded 'é' (0xE9) must survive the round-trip.");
     }
 
     [Test]
@@ -530,7 +542,8 @@ public class FunctionalTests
         int port,
         string message,
         string clientCertPath = null,
-        string password = null)
+        string password = null,
+        Encoding encoding = null)
     {
         using var client = new TcpClient();
 
@@ -575,8 +588,9 @@ public class FunctionalTests
                 currentStream = sslStream;
             }
 
+            var sendEncoding = encoding ?? Encoding.UTF8;
             var payload = $"\u000b{message}\u001c\r";
-            var bytes = Encoding.UTF8.GetBytes(payload);
+            var bytes = sendEncoding.GetBytes(payload);
 
             await currentStream.WriteAsync(bytes, 0, bytes.Length);
             await currentStream.FlushAsync();

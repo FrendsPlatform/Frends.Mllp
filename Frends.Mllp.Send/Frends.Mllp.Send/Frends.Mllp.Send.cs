@@ -37,7 +37,7 @@ public static class Mllp
                 throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
 
             if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
-                throw new ArgumentException("EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(connection));
+                throw new ArgumentException("EncodingInString must not be null or empty when Encoding is set to Other.", nameof(connection));
 
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
             var message = PrepareMessage(input.Hl7Message, parser);

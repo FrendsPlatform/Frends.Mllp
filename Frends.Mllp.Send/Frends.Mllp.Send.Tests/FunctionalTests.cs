@@ -246,10 +246,15 @@ namespace Frends.Mllp.Send.Tests
                 Is.Not.Null);
         }
 
-        [Test]
-        public async Task ShouldSendWithUtf8Encoding()
+        [TestCase(FileEncoding.UTF8, null, "D\u00f6e^J\u00f6hn")]
+        [TestCase(FileEncoding.ASCII, null, "D?e^J?hn")]
+        [TestCase(FileEncoding.Other, "iso-8859-1", "D\u00f6e^J\u00f6hn")]
+        [TestCase(FileEncoding.Windows1252, null, "D\u00f6e^J\u00f6hn")]
+        public async Task ShouldRoundTripSpecialCharactersByEncoding(FileEncoding fileEncoding, string encodingInString, string expectedPatientName)
         {
-            SetupServerLogic(requireTls: false);
+            const string originalPatientName = "D\u00f6e^J\u00f6hn";
+            var messageEncoding = ResolveEncoding(fileEncoding, encodingInString);
+            SetupServerLogic(requireTls: false, messageEncoding);
 
             var connection = new Connection
             {
@@ -257,12 +262,13 @@ namespace Frends.Mllp.Send.Tests
                 Port = _port,
                 TlsMode = TlsMode.None,
                 ConnectTimeoutSeconds = 5,
-                Encoding = FileEncoding.UTF8,
+                Encoding = fileEncoding,
+                EncodingInString = encodingInString,
             };
 
             var input = new Input
             {
-                Hl7Message = Helpers.BuildTestMessage(),
+                Hl7Message = Helpers.BuildTestMessage(originalPatientName),
             };
             var options = new Options
             {
@@ -284,7 +290,7 @@ namespace Frends.Mllp.Send.Tests
                 Does.Contain("MSA|AA"));
             Assert.That(
                 receivedByServer,
-                Is.Not.Null);
+                Does.Contain($"PID|1||12345^^^Hospital^MR||{expectedPatientName}||19800101|M"));
         }
 
         [Test]
@@ -314,130 +320,6 @@ namespace Frends.Mllp.Send.Tests
                 connection,
                 options,
                 CancellationToken.None));
-        }
-
-        [Test]
-        public async Task ShouldSendWithAsciiEncoding()
-        {
-            SetupServerLogic(requireTls: false);
-
-            var connection = new Connection
-            {
-                Host = "127.0.0.1",
-                Port = _port,
-                TlsMode = TlsMode.None,
-                ConnectTimeoutSeconds = 5,
-                Encoding = FileEncoding.ASCII,
-            };
-
-            var input = new Input
-            {
-                Hl7Message = Helpers.BuildTestMessage(),
-            };
-            var options = new Options
-            {
-                ExpectAcknowledgement = true,
-            };
-
-            var result = Mllp.Send(
-                input,
-                connection,
-                options,
-                CancellationToken.None);
-            var receivedByServer = await _serverTask;
-
-            Assert.That(
-                result.Success,
-                Is.True);
-            Assert.That(
-                result.Output,
-                Does.Contain("MSA|AA"));
-            Assert.That(
-                receivedByServer,
-                Is.Not.Null);
-        }
-
-        [Test]
-        public async Task ShouldSendWithOtherEncodingAsString()
-        {
-            SetupServerLogic(requireTls: false);
-
-            var connection = new Connection
-            {
-                Host = "127.0.0.1",
-                Port = _port,
-                TlsMode = TlsMode.None,
-                ConnectTimeoutSeconds = 5,
-                Encoding = FileEncoding.Other,
-                EncodingInString = "iso-8859-1",
-            };
-
-            var input = new Input
-            {
-                Hl7Message = Helpers.BuildTestMessage(),
-            };
-            var options = new Options
-            {
-                ExpectAcknowledgement = true,
-            };
-
-            var result = Mllp.Send(
-                input,
-                connection,
-                options,
-                CancellationToken.None);
-            var receivedByServer = await _serverTask;
-
-            Assert.That(
-                result.Success,
-                Is.True);
-            Assert.That(
-                result.Output,
-                Does.Contain("MSA|AA"));
-            Assert.That(
-                receivedByServer,
-                Is.Not.Null);
-        }
-
-        [Test]
-        public async Task ShouldSendWithWindows1252Encoding()
-        {
-            SetupServerLogic(requireTls: false);
-
-            var connection = new Connection
-            {
-                Host = "127.0.0.1",
-                Port = _port,
-                TlsMode = TlsMode.None,
-                ConnectTimeoutSeconds = 5,
-                Encoding = FileEncoding.Windows1252,
-            };
-
-            var input = new Input
-            {
-                Hl7Message = Helpers.BuildTestMessage(),
-            };
-            var options = new Options
-            {
-                ExpectAcknowledgement = true,
-            };
-
-            var result = Mllp.Send(
-                input,
-                connection,
-                options,
-                CancellationToken.None);
-            var receivedByServer = await _serverTask;
-
-            Assert.That(
-                result.Success,
-                Is.True);
-            Assert.That(
-                result.Output,
-                Does.Contain("MSA|AA"));
-            Assert.That(
-                receivedByServer,
-                Is.Not.Null);
         }
 
         [Test]
@@ -472,7 +354,19 @@ namespace Frends.Mllp.Send.Tests
                 Does.Contain("EncodingInString"));
         }
 
-        private void SetupServerLogic(bool requireTls)
+        private static Encoding ResolveEncoding(FileEncoding fileEncoding, string encodingInString)
+        {
+            return fileEncoding switch
+            {
+                FileEncoding.UTF8 => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                FileEncoding.ASCII => Encoding.ASCII,
+                FileEncoding.Windows1252 => Encoding.GetEncoding("windows-1252"),
+                FileEncoding.Other => Encoding.GetEncoding(encodingInString),
+                _ => Encoding.ASCII,
+            };
+        }
+
+        private void SetupServerLogic(bool requireTls, Encoding messageEncoding = null)
         {
             _serverTask = Task.Run(async () =>
             {
@@ -496,8 +390,10 @@ namespace Frends.Mllp.Send.Tests
                         stream = sslStream;
                     }
 
+                    var encoding = messageEncoding ?? Encoding.ASCII;
                     var received = await Helpers.ReadMllpMessage(
                         stream,
+                        encoding,
                         _serverCts.Token);
                     var ack = Helpers.BuildAck(Helpers.ExtractControlId(received));
                     var response = Encoding.ASCII.GetBytes(MLLP.CreateMLLPMessage(ack));

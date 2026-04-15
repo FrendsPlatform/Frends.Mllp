@@ -8,13 +8,12 @@ namespace Frends.Mllp.Send.Tests
 {
     internal static class Helpers
     {
-        internal static async Task<string> ReadMllpMessage(Stream stream, CancellationToken cancellationToken)
+        internal static async Task<string> ReadMllpMessage(Stream stream, Encoding encoding, CancellationToken cancellationToken)
         {
             const byte startBlock = 0x0b;
             const byte endBlock = 0x1c;
-            const byte carriageReturn = 0x0d;
 
-            var builder = new StringBuilder();
+            using var messageBuffer = new MemoryStream();
             var buffer = new byte[1];
             var started = false;
 
@@ -32,27 +31,19 @@ namespace Frends.Mllp.Send.Tests
 
                 if (current == endBlock)
                 {
-                    var nextByte = new byte[1];
-                    var read = await stream.ReadAsync(nextByte, 0, 1, cancellationToken);
-
-                    if (read > 0 && nextByte[0] == carriageReturn)
-                    {
-                        return builder.ToString();
-                    }
-
-                    return builder.ToString();
+                    return encoding.GetString(messageBuffer.ToArray());
                 }
 
-                builder.Append((char)current);
+                messageBuffer.WriteByte(current);
             }
 
             throw new Exception("Connection closed before MLLP message was fully received.");
         }
 
-        internal static string BuildTestMessage() =>
+        internal static string BuildTestMessage(string patientName = "Doe^John") =>
             "MSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20250101010101||ADT^A01|MSG00001|P|2.5.1\r" +
             "EVN|A01|20250101010101\r" +
-            "PID|1||12345^^^Hospital^MR||Doe^John||19800101|M";
+            $"PID|1||12345^^^Hospital^MR||{patientName}||19800101|M";
 
         internal static string BuildAck(string controlId) =>
             $"MSH|^~\\&|Listener|ListenerFacility|Sender|SenderFacility|{DateTime.UtcNow:yyyyMMddHHmmss}||ACK^A01|ACK0001|P|2.5.1\r" +
