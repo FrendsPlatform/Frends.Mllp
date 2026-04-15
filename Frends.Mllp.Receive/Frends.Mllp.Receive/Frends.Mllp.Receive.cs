@@ -53,13 +53,14 @@ public static class Mllp
         CancellationToken cancellationToken)
     {
         X509Certificate2 serverCert = null;
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateParameters(input, connection);
 
             var messages = new ConcurrentQueue<string>();
-            var encoding = connection.GetEncoding();
+            var encoding = GetEncoding(connection);
 
             if (connection.TlsMode == TlsMode.Mtls)
             {
@@ -116,10 +117,35 @@ public static class Mllp
         if (connection.BufferSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(connection), "Buffer size must be positive.");
 
-        _ = connection.GetEncoding();
+        if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
+        {
+            throw new ArgumentException(
+                "EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(connection));
+        }
 
         if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
+    }
+
+    private static Encoding GetEncoding(Connection connection)
+    {
+        return connection.Encoding switch
+        {
+            FileEncoding.UTF8 => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            FileEncoding.Default => Encoding.Default,
+            FileEncoding.ASCII => Encoding.ASCII,
+            FileEncoding.Unicode => Encoding.Unicode,
+            FileEncoding.Windows1252 => GetExtendedEncoding("windows-1252"),
+            FileEncoding.Other => GetExtendedEncoding(connection.EncodingInString),
+            _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        };
+    }
+
+    private static Encoding GetExtendedEncoding(string name)
+    {
+        CodePagesEncodingProviderRegistrar.EnsureRegistered();
+
+        return Encoding.GetEncoding(name);
     }
 
     private static IHost BuildMllpHost(
@@ -191,9 +217,12 @@ public static class Mllp
                     };
                 }
 
-                opt.Listeners = new List<ListenOptions> { listener };
+                opt.Listeners = new List<ListenOptions>
+                {
+                    listener,
+                };
             })
-        .Build();
+            .Build();
     }
 
     private static string BuildAcknowledgement(string message, Connection connection)
@@ -205,6 +234,7 @@ public static class Mllp
         {
             var parser = new PipeParser();
             var parsed = parser.Parse(message);
+
             if (parsed is not IMessage inbound)
                 return string.Empty;
 
@@ -247,7 +277,16 @@ public static class Mllp
         private readonly Encoding encoding;
 
         public MllpPipelineFilter(Encoding encoding)
-            : base(new[] { StartBlockByte }, new[] { EndBlockByte, CarriageReturnByte })
+            : base(
+                new[]
+                {
+                    StartBlockByte,
+                },
+                new[]
+                {
+                    EndBlockByte,
+                    CarriageReturnByte,
+                })
         {
             this.encoding = encoding;
         }
@@ -255,6 +294,7 @@ public static class Mllp
         protected override MllpPackage DecodePackage(ref ReadOnlySequence<byte> buffer)
         {
             var payload = buffer.GetString(encoding);
+
             return new MllpPackage(payload);
         }
     }

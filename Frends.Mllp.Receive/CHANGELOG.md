@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0] - 2026-04-13
+
+### Added
+
+- `Connection.Encoding` is now selectable and can be set custom by user
+
 ## [1.0.0] - 2026-02-06
 
 ### Added

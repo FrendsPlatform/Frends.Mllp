@@ -15,3 +15,39 @@ public enum TlsMode
     /// </summary>
     Mtls,
 }
+
+/// <summary>
+/// Specifies the character encoding used for the HL7 message.
+/// </summary>
+public enum FileEncoding
+{
+    /// <summary>
+    /// UTF-8 encoding.
+    /// </summary>
+    UTF8,
+
+    /// <summary>
+    /// The system default encoding.
+    /// </summary>
+    Default,
+
+    /// <summary>
+    /// ASCII encoding.
+    /// </summary>
+    ASCII,
+
+    /// <summary>
+    /// Unicode (UTF-16) encoding.
+    /// </summary>
+    Unicode,
+
+    /// <summary>
+    /// Windows-1252 encoding.
+    /// </summary>
+    Windows1252,
+
+    /// <summary>
+    /// A custom encoding specified as a string.
+    /// </summary>
+    Other,
+}

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Text;
 
 namespace Frends.Mllp.Receive.Definitions;
 
@@ -47,13 +46,6 @@ public class Connection
     public int BufferSize { get; set; } = 8192;
 
     /// <summary>
-    /// Encoding used to read messages.
-    /// </summary>
-    /// <example>UTF-8</example>
-    [DefaultValue("UTF-8")]
-    public string Encoding { get; set; } = "UTF-8";
-
-    /// <summary>
     /// Whether to send a simple acknowledgement for each message.
     /// </summary>
     /// <example>true</example>
@@ -76,5 +68,19 @@ public class Connection
     [DefaultValue(false)]
     public bool IgnoreClientCertificateErrors { get; set; } = false;
 
-    internal Encoding GetEncoding() => System.Text.Encoding.GetEncoding(Encoding);
+    /// <summary>
+    /// Encoding used to read incoming HL7 messages.
+    /// </summary>
+    /// <example>FileEncoding.UTF8</example>
+    [DefaultValue(FileEncoding.UTF8)]
+    public FileEncoding Encoding { get; set; } = FileEncoding.UTF8;
+
+    /// <summary>
+    /// Custom encoding name, used when Encoding is set to Other.
+    /// </summary>
+    /// <example>iso-8859-1</example>
+    [UIHint(nameof(FileEncoding), "", FileEncoding.Other)]
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string EncodingInString { get; set; } = string.Empty;
 }
