@@ -446,6 +446,7 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
+
             // Encoding.Latin1 is ISO-8859-1 (built-in, no code-page registration required).
             await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.Latin1);
         });
