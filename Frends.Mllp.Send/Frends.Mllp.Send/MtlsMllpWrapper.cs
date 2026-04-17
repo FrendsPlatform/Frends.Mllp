@@ -11,10 +11,12 @@ using NHapiTools.Base.Util;
 
 internal class MtlsMllpWrapper : IDisposable
 {
-    private static readonly FieldInfo TcpField = typeof(SimpleMLLPClient).GetField("tcpClient", BindingFlags.Instance | BindingFlags.NonPublic)
+    private static readonly FieldInfo TcpField =
+        typeof(SimpleMLLPClient).GetField("tcpClient", BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new MissingFieldException(nameof(SimpleMLLPClient), "tcpClient");
 
-    private static readonly FieldInfo StreamToUseField = typeof(SimpleMLLPClient).GetField("streamToUse", BindingFlags.Instance | BindingFlags.NonPublic)
+    private static readonly FieldInfo StreamToUseField =
+        typeof(SimpleMLLPClient).GetField("streamToUse", BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new MissingFieldException(nameof(SimpleMLLPClient), "streamToUse");
 
     private readonly SimpleMLLPClient _client;
@@ -32,7 +34,11 @@ internal class MtlsMllpWrapper : IDisposable
     public void Dispose() => _client?.Dispose();
 #pragma warning restore FT0014 // Documentation required tags are missing
 
-    internal void EnableMtls(X509Certificate2 clientCert, string hostname, bool ignoreErrors, string[] serverCertificateThumbprints)
+    internal void EnableMtls(
+        X509Certificate2 clientCert,
+        string hostname,
+        bool ignoreErrors,
+        string[] serverCertificateThumbprints)
     {
         var tcpClient = (TcpClient)TcpField.GetValue(_client);
 
@@ -43,9 +49,13 @@ internal class MtlsMllpWrapper : IDisposable
             if (serverCertificateThumbprints.Length <= 0)
                 return errors == SslPolicyErrors.None;
 
-            var thumbprint = cert?.GetCertHashString() ?? string.Empty;
+            if (cert is null) return false;
+            var thumbprint = Normalize(cert.GetCertHashString());
 
-            return Array.Exists(serverCertificateThumbprints, expectedThumbprint => expectedThumbprint == thumbprint);
+            return Array.Exists(
+                serverCertificateThumbprints,
+                expected => !string.IsNullOrWhiteSpace(expected) &&
+                            Normalize(expected).Equals(thumbprint, StringComparison.OrdinalIgnoreCase));
         });
 
         var certs = new X509Certificate2Collection(clientCert);
@@ -55,6 +65,11 @@ internal class MtlsMllpWrapper : IDisposable
         StreamToUseField.SetValue(_client, sslStream);
         _activeStream = sslStream;
     }
+
+    private static string Normalize(string value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 
     internal string Send(string message, double timeout)
     {

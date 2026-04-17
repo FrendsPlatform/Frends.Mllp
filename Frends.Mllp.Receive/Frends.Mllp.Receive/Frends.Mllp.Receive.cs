@@ -123,12 +123,6 @@ public static class Mllp
                 "EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(connection));
         }
 
-        if (connection.TlsMode == TlsMode.Mtls && !connection.IgnoreClientCertificateErrors && connection.ClientCertificateThumbprints.Length <= 0)
-        {
-            throw new ArgumentException(
-                "You must provide at least one valid client certificate thumbprint.", nameof(connection));
-        }
-
         if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
     }
@@ -219,9 +213,13 @@ public static class Mllp
                             if (connection.ClientCertificateThumbprints.Length <= 0)
                                 return errors == SslPolicyErrors.None;
 
-                            var thumbprint = cert?.GetCertHashString() ?? string.Empty;
+                            if (cert is null) return false;
+                            var thumbprint = Normalize(cert.GetCertHashString());
 
-                            return connection.ClientCertificateThumbprints.Contains(thumbprint);
+                            return Array.Exists(
+                                connection.ClientCertificateThumbprints,
+                                expected => !string.IsNullOrWhiteSpace(expected) &&
+                                            Normalize(expected).Equals(thumbprint, StringComparison.OrdinalIgnoreCase));
                         },
                     };
                 }
@@ -230,6 +228,11 @@ public static class Mllp
             })
             .Build();
     }
+
+    private static string Normalize(string value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 
     private static string BuildAcknowledgement(string message, Connection connection)
     {

@@ -74,7 +74,7 @@ public class Connection
     /// Only used when IgnoreServerCertificateErrors is false.
     /// Used in MTLS mode for certificate pinning.
     /// </summary>
-    /// <example>E5FA62B8B5F3B0B2B3B4B5B6B7B8B9B0B1B2B3B</example>
+    /// <example>E5FA62B8B5F3B0B2B3B4B5B6B7B8B9B0B1B2B3B4</example>
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     [UIHint(nameof(TlsMode), "", TlsMode.Mtls)]
