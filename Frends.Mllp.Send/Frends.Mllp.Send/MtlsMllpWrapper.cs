@@ -42,7 +42,7 @@ internal class MtlsMllpWrapper : IDisposable
     {
         var tcpClient = (TcpClient)TcpField.GetValue(_client);
 
-        var sslStream = new SslStream(tcpClient.GetStream(), false, (sender, cert, chain, errors) =>
+        var sslStream = new SslStream(tcpClient.GetStream(), false, (_, cert, _, errors) =>
         {
             if (ignoreErrors) return true;
 
@@ -66,11 +66,6 @@ internal class MtlsMllpWrapper : IDisposable
         _activeStream = sslStream;
     }
 
-    private static string Normalize(string value) =>
-        string.IsNullOrEmpty(value)
-            ? string.Empty
-            : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
-
     internal string Send(string message, double timeout)
     {
         return _client.SendHL7Message(message, timeout);
@@ -83,4 +78,9 @@ internal class MtlsMllpWrapper : IDisposable
         writer.Write(framed);
         writer.Flush();
     }
+
+    private static string Normalize(string value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 }
