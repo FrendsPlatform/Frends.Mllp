@@ -171,13 +171,13 @@ namespace Frends.Mllp.Send.Tests
         }
 
         [Test]
-        public void MtlsSendValidationShouldThrowWhenThumbprintIsMissing()
+        public void MtlsSendValidationShouldSucceed()
         {
             SetupServerLogic(requireTls: true);
 
             var connection = new Connection
             {
-                Host = "127.0.0.1",
+                Host = "localhost",
                 Port = _port,
                 TlsMode = TlsMode.Mtls,
                 ClientCertPath = _clientPfxPath,
@@ -186,27 +186,26 @@ namespace Frends.Mllp.Send.Tests
                 ConnectTimeoutSeconds = 5,
             };
 
-            var input = new Input
-            {
-                Hl7Message = Helpers.BuildTestMessage(),
-            };
             var options = new Options
             {
                 ExpectAcknowledgement = true,
             };
-            var ex = Assert.Throws<Exception>(() =>
+            var input = new Input
             {
-                Mllp.Send(
-                    input,
-                    connection,
-                    options,
-                    CancellationToken.None);
-            });
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var result = Mllp.Send(
+                input,
+                connection,
+                options,
+                CancellationToken.None);
 
-            Assert.That(ex, Is.Not.Null);
             Assert.That(
-                ex.Message,
-                Does.Contain("You must provide at least one valid server certificate thumbprint."));
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Is.Not.Null);
         }
 
         [Test]

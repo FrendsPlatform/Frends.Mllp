@@ -90,12 +90,6 @@ public static class Mllp
 
         if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
             throw new ArgumentException("EncodingInString must not be null or empty when Encoding is set to Other.", nameof(connection));
-
-        if (connection.TlsMode == TlsMode.Mtls && !connection.IgnoreServerCertificateErrors && (connection.ServerCertificateThumbprints?.Length ?? 0) <= 0)
-        {
-            throw new ArgumentException(
-                "You must provide at least one valid server certificate thumbprint.", nameof(connection));
-        }
     }
 
     private static Encoding GetEncoding(Connection connection)
