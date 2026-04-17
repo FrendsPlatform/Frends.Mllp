@@ -164,13 +164,14 @@ namespace Frends.Mllp.Send.Tests
                     CancellationToken.None);
             });
 
+            Assert.That(ex, Is.Not.Null);
             Assert.That(
                 ex.Message,
                 Is.EqualTo("mTLS is enabled but client certificate path is missing."));
         }
 
         [Test]
-        public void MtlsSendValidationShouldThrowOnUntrusted()
+        public void MtlsSendValidationShouldThrowWhenThumbprintIsMissing()
         {
             SetupServerLogic(requireTls: true);
 
@@ -202,25 +203,27 @@ namespace Frends.Mllp.Send.Tests
                     CancellationToken.None);
             });
 
+            Assert.That(ex, Is.Not.Null);
             Assert.That(
                 ex.Message,
-                Does.Contain("remote certificate was rejected")
-                    .Or.Contain("RemoteCertificateValidationCallback"));
+                Does.Contain("You must provide at least one valid server certificate thumbprint."));
         }
 
         [Test]
-        public void MtlsSendValidationShouldSucceed()
+        public void MtlsSendValidationShouldSucceedWithMatchingServerThumbprint()
         {
             SetupServerLogic(requireTls: true);
+            var serverThumbprint = GetServerCertificateThumbprint();
 
             var connection = new Connection
             {
-                Host = "localhost",
+                Host = "127.0.0.1",
                 Port = _port,
                 TlsMode = TlsMode.Mtls,
                 ClientCertPath = _clientPfxPath,
                 ClientCertPassword = _password,
                 IgnoreServerCertificateErrors = false,
+                ServerCertificateThumbprints = [serverThumbprint],
                 ConnectTimeoutSeconds = 5,
             };
 
@@ -244,13 +247,61 @@ namespace Frends.Mllp.Send.Tests
             Assert.That(
                 result.Output,
                 Is.Not.Null);
+            Assert.That(
+                _serverTask.Result,
+                Does.Contain("MSG00001"));
+        }
+
+        [Test]
+        public void MtlsSendValidationShouldThrowOnInvalidServerThumbprint()
+        {
+            SetupServerLogic(requireTls: true);
+
+            var connection = new Connection
+            {
+                Host = "127.0.0.1",
+                Port = _port,
+                TlsMode = TlsMode.Mtls,
+                ClientCertPath = _clientPfxPath,
+                ClientCertPassword = _password,
+                IgnoreServerCertificateErrors = false,
+                ServerCertificateThumbprints = ["invalid"],
+                ConnectTimeoutSeconds = 5,
+            };
+
+            var input = new Input
+            {
+                Hl7Message = Helpers.BuildTestMessage(),
+            };
+            var options = new Options
+            {
+                ExpectAcknowledgement = true,
+            };
+
+            var ex = Assert.Throws<Exception>(() =>
+            {
+                Mllp.Send(
+                    input,
+                    connection,
+                    options,
+                    CancellationToken.None);
+            });
+
+            Assert.That(ex, Is.Not.Null);
+            Assert.That(
+                ex.Message,
+                Does.Contain("remote certificate was rejected")
+                    .Or.Contain("RemoteCertificateValidationCallback"));
         }
 
         [TestCase(FileEncoding.UTF8, null, "D\u00f6e^J\u00f6hn")]
         [TestCase(FileEncoding.ASCII, null, "D?e^J?hn")]
         [TestCase(FileEncoding.Other, "iso-8859-1", "D\u00f6e^J\u00f6hn")]
         [TestCase(FileEncoding.Windows1252, null, "D\u00f6e^J\u00f6hn")]
-        public async Task ShouldRoundTripSpecialCharactersByEncoding(FileEncoding fileEncoding, string encodingInString, string expectedPatientName)
+        public async Task ShouldRoundTripSpecialCharactersByEncoding(
+            FileEncoding fileEncoding,
+            string encodingInString,
+            string expectedPatientName)
         {
             const string originalPatientName = "D\u00f6e^J\u00f6hn";
             var messageEncoding = ResolveEncoding(fileEncoding, encodingInString);
@@ -349,6 +400,7 @@ namespace Frends.Mllp.Send.Tests
                 connection,
                 options,
                 CancellationToken.None));
+            Assert.That(ex, Is.Not.Null);
             Assert.That(
                 ex.Message,
                 Does.Contain("EncodingInString"));
@@ -364,6 +416,13 @@ namespace Frends.Mllp.Send.Tests
                 FileEncoding.Other => Encoding.GetEncoding(encodingInString),
                 _ => Encoding.ASCII,
             };
+        }
+
+        private string GetServerCertificateThumbprint()
+        {
+            using var certificate = new X509Certificate2(_serverPfxPath, _password);
+
+            return certificate.GetCertHashString();
         }
 
         private void SetupServerLogic(bool requireTls, Encoding messageEncoding = null)

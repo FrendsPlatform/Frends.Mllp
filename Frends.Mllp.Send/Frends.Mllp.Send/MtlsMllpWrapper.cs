@@ -32,14 +32,20 @@ internal class MtlsMllpWrapper : IDisposable
     public void Dispose() => _client?.Dispose();
 #pragma warning restore FT0014 // Documentation required tags are missing
 
-    internal void EnableMtls(X509Certificate2 clientCert, string hostname, bool ignoreErrors)
+    internal void EnableMtls(X509Certificate2 clientCert, string hostname, bool ignoreErrors, string[] serverCertificateThumbprints)
     {
         var tcpClient = (TcpClient)TcpField.GetValue(_client);
 
         var sslStream = new SslStream(tcpClient.GetStream(), false, (sender, cert, chain, errors) =>
         {
             if (ignoreErrors) return true;
-            return errors == SslPolicyErrors.None;
+
+            if (serverCertificateThumbprints.Length <= 0)
+                return errors == SslPolicyErrors.None;
+
+            var thumbprint = cert?.GetCertHashString() ?? string.Empty;
+
+            return Array.Exists(serverCertificateThumbprints, expectedThumbprint => expectedThumbprint == thumbprint);
         });
 
         var certs = new X509Certificate2Collection(clientCert);

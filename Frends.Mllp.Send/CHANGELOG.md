@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.0] - 2026-04-17
+
+### Added
+
+- `Connection.ServerCertificateThumbprints` to allow pinning the expected server certificate in MTLS mode when `IgnoreServerCertificateErrors` is `false`
+
 ## [1.2.0] - 2026-04-13
 
 ### Changed

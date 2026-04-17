@@ -33,11 +33,7 @@ public static class Mllp
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrWhiteSpace(input.Hl7Message))
-                throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
-
-            if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
-                throw new ArgumentException("EncodingInString must not be null or empty when Encoding is set to Other.", nameof(connection));
+            ValidateParameters(input, connection);
 
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
             var message = PrepareMessage(input.Hl7Message, parser);
@@ -56,7 +52,7 @@ public static class Mllp
                             throw new Exception("mTLS is enabled but client certificate path is missing.");
 
                         clientCert = new X509Certificate2(connection.ClientCertPath, connection.ClientCertPassword);
-                        wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors);
+                        wrapper.EnableMtls(clientCert, connection.Host, connection.IgnoreServerCertificateErrors, connection.ServerCertificateThumbprints ?? []);
                     }
 
                     if (options.ExpectAcknowledgement)
@@ -84,6 +80,21 @@ public static class Mllp
         catch (Exception ex)
         {
             return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
+        }
+    }
+
+    private static void ValidateParameters(Input input, Connection connection)
+    {
+        if (string.IsNullOrWhiteSpace(input.Hl7Message))
+            throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
+
+        if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
+            throw new ArgumentException("EncodingInString must not be null or empty when Encoding is set to Other.", nameof(connection));
+
+        if (connection.TlsMode == TlsMode.Mtls && !connection.IgnoreServerCertificateErrors && (connection.ServerCertificateThumbprints?.Length ?? 0) <= 0)
+        {
+            throw new ArgumentException(
+                "You must provide at least one valid server certificate thumbprint.", nameof(connection));
         }
     }
 
