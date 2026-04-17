@@ -301,6 +301,7 @@ public class FunctionalTests
             ServerCertPassword = _password,
             IgnoreClientCertificateErrors = false,
             ListenDurationSeconds = 10,
+            ClientCertificateThumbprints = ["invalid"],
         };
 
         var serverTask = Mllp.Receive(
