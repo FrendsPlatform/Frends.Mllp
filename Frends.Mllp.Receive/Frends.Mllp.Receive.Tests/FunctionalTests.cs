@@ -20,8 +20,14 @@ namespace Frends.Mllp.Receive.Tests;
 [TestFixture]
 public class FunctionalTests
 {
-    private string _clientPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/client.pfx");
-    private string _serverPfxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestData/server.pfx");
+    private string _clientPfxPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory,
+        "TestData/client.pfx");
+
+    private string _serverPfxPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory,
+        "TestData/server.pfx");
+
     private string _password = "password";
 
     [OneTimeSetUp]
@@ -42,7 +48,7 @@ public class FunctionalTests
         };
         var connection = new Connection
         {
-            ListenDurationSeconds = 5,
+            ListenDurationSeconds = 10,
             BufferSize = 1024,
         };
         var options = new Options();
@@ -50,15 +56,27 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None);
         await sender;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
-        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("MSH|^~\\&|HIS|RIH"));
     }
 
     [Test]
@@ -80,24 +98,38 @@ public class FunctionalTests
         var sender1 = Task.Run(async () =>
         {
             await Task.Delay(50);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
         var sender2 = Task.Run(async () =>
         {
             await Task.Delay(150);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5");
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
-        await Task.WhenAll(sender1, sender2);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None);
+        await Task.WhenAll(
+            sender1,
+            sender2);
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Is.EquivalentTo(new[]
-        {
-            "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5",
-            "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5",
-        }));
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Is.EquivalentTo(new[]
+            {
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|ONE|SECURITY|ADT^A01|MSG00001|P|2.5",
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|TWO|SECURITY|ADT^A01|MSG00001|P|2.5",
+            }));
     }
 
     [Test]
@@ -115,10 +147,18 @@ public class FunctionalTests
         };
         var options = new Options();
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None);
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Is.Empty);
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Is.Empty);
     }
 
     [Test]
@@ -146,24 +186,46 @@ public class FunctionalTests
                 "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5");
         });
 
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None);
         var ack = ackTask.Result;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
 
-        Assert.That(ack, Is.Not.Null.And.Not.Empty);
+        Assert.That(
+            ack,
+            Is.Not.Null.And.Not.Empty);
 
         var parser = new PipeParser();
         var ackMessage = parser.Parse(ack);
         var terser = new Terser(ackMessage);
 
-        Assert.That(terser.Get("/MSH-9-1"), Is.EqualTo("ACK"));
-        Assert.That(terser.Get("/MSH-9-2"), Is.EqualTo("O01"));
-        Assert.That(terser.Get("/MSA-1"), Is.EqualTo("AA"));
-        Assert.That(terser.Get("/MSA-2"), Is.EqualTo("CTRL123"));
-        Assert.That(terser.Get("/MSH-3"), Is.EqualTo("RCVAPP"));
-        Assert.That(terser.Get("/MSH-5"), Is.EqualTo("SNDAPP"));
+        Assert.That(
+            terser.Get("/MSH-9-1"),
+            Is.EqualTo("ACK"));
+        Assert.That(
+            terser.Get("/MSH-9-2"),
+            Is.EqualTo("O01"));
+        Assert.That(
+            terser.Get("/MSA-1"),
+            Is.EqualTo("AA"));
+        Assert.That(
+            terser.Get("/MSA-2"),
+            Is.EqualTo("CTRL123"));
+        Assert.That(
+            terser.Get("/MSH-3"),
+            Is.EqualTo("RCVAPP"));
+        Assert.That(
+            terser.Get("/MSH-5"),
+            Is.EqualTo("SNDAPP"));
     }
 
     [Test]
@@ -241,7 +303,11 @@ public class FunctionalTests
             ListenDurationSeconds = 10,
         };
 
-        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var serverTask = Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
 
         var senderTask = Task.Run(async () =>
         {
@@ -249,7 +315,11 @@ public class FunctionalTests
             {
                 await Task.Delay(1000);
 
-                return await SendMessageAsync(port, "MSG|UNTRUSTED", _clientPfxPath, _password);
+                return await SendMessageAsync(
+                    port,
+                    "MSG|UNTRUSTED",
+                    _clientPfxPath,
+                    _password);
             }
             catch (Exception ex)
             {
@@ -259,14 +329,19 @@ public class FunctionalTests
             }
         });
 
-        await Task.WhenAll(serverTask, senderTask).WaitAsync(TimeSpan.FromSeconds(20));
+        await Task.WhenAll(
+            serverTask,
+            senderTask).WaitAsync(TimeSpan.FromSeconds(20));
 
         var result = await serverTask;
         var ack = await senderTask;
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.Output, Is.Empty, "Server should not have accepted the message.");
+            Assert.That(
+                result.Output,
+                Is.Empty,
+                "Server should not have accepted the message.");
             Assert.That(
                 ack,
                 Is.Null.Or.Empty.Or.EqualTo("CLIENT_ERROR_CAUGHT"),
@@ -292,26 +367,44 @@ public class FunctionalTests
             ListenDurationSeconds = 10,
         };
 
-        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var serverTask = Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
 
         var senderTask = Task.Run(async () =>
         {
             await Task.Delay(500);
 
-            return await SendMessageAsync(port, "MSG|ACCEPTED_BY_IGNORE", _clientPfxPath, _password);
+            return await SendMessageAsync(
+                port,
+                "MSG|ACCEPTED_BY_IGNORE",
+                _clientPfxPath,
+                _password);
         });
 
-        await Task.WhenAll(serverTask, senderTask).WaitAsync(TimeSpan.FromSeconds(20));
+        await Task.WhenAll(
+            serverTask,
+            senderTask).WaitAsync(TimeSpan.FromSeconds(20));
 
         var result = await serverTask;
         var ack = await senderTask;
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.Success, Is.True);
-            Assert.That(result.Output, Has.Length.EqualTo(1));
-            Assert.That(result.Output.First(), Is.EqualTo("MSG|ACCEPTED_BY_IGNORE"));
-            Assert.That(ack, Is.Not.Null);
+            Assert.That(
+                result.Success,
+                Is.True);
+            Assert.That(
+                result.Output,
+                Has.Length.EqualTo(1));
+            Assert.That(
+                result.Output.First(),
+                Is.EqualTo("MSG|ACCEPTED_BY_IGNORE"));
+            Assert.That(
+                ack,
+                Is.Not.Null);
         });
     }
 
@@ -330,20 +423,29 @@ public class FunctionalTests
             ListenDurationSeconds = 2,
         };
 
-        var serverTask = Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var serverTask = Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
 
         var zombieTask = Task.Run(async () =>
         {
             await Task.Delay(500);
             using var client = new TcpClient();
-            await client.ConnectAsync(IPAddress.Loopback, port);
+            await client.ConnectAsync(
+                IPAddress.Loopback,
+                port);
             using var stream = client.GetStream();
 
             byte[] startByte =
             {
                 0x0b,
             };
-            await stream.WriteAsync(startByte, 0, startByte.Length);
+            await stream.WriteAsync(
+                startByte,
+                0,
+                startByte.Length);
 
             await Task.Delay(20000);
         });
@@ -383,16 +485,32 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.UTF8);
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5",
+                encoding: Encoding.UTF8);
         });
 
-        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
         await sender;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
-        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
-        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "UTF-8 encoded 'é' must survive the round-trip.");
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("caf\u00e9"),
+            "UTF-8 encoded 'é' must survive the round-trip.");
     }
 
     [Test]
@@ -414,16 +532,32 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.ASCII);
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5",
+                encoding: Encoding.ASCII);
         });
 
-        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
         await sender;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
-        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
-        Assert.That(result.Output.First(), Does.Contain("caf?"), "ASCII-encoded 'é' must arrive as the replacement character '?'.");
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("caf?"),
+            "ASCII-encoded 'é' must arrive as the replacement character '?'.");
     }
 
     [Test]
@@ -448,16 +582,32 @@ public class FunctionalTests
             await Task.Delay(100);
 
             // Encoding.Latin1 is ISO-8859-1 (built-in, no code-page registration required).
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.Latin1);
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5",
+                encoding: Encoding.Latin1);
         });
 
-        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
         await sender;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
-        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
-        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "ISO-8859-1 encoded 'é' (0xE9) must survive the round-trip.");
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("caf\u00e9"),
+            "ISO-8859-1 encoded 'é' (0xE9) must survive the round-trip.");
     }
 
     [Test]
@@ -480,8 +630,14 @@ public class FunctionalTests
             ThrowErrorOnFailure = true,
         };
 
-        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
-        Assert.That(ex, Is.Not.Null);
+        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None));
+        Assert.That(
+            ex,
+            Is.Not.Null);
     }
 
     [Test]
@@ -503,16 +659,32 @@ public class FunctionalTests
         var sender = Task.Run(async () =>
         {
             await Task.Delay(100);
-            await SendMessageAsync(port, "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5", encoding: Encoding.GetEncoding("windows-1252"));
+            await SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|caf\u00e9|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5",
+                encoding: Encoding.GetEncoding("windows-1252"));
         });
 
-        var result = await Mllp.Receive(input, connection, new Options(), CancellationToken.None);
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
         await sender;
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Has.Length.EqualTo(1));
-        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
-        Assert.That(result.Output.First(), Does.Contain("caf\u00e9"), "Windows-1252 encoded 'é' (0xE9) must survive the round-trip.");
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("MSH|^~\\&|HIS|RIH"));
+        Assert.That(
+            result.Output.First(),
+            Does.Contain("caf\u00e9"),
+            "Windows-1252 encoded 'é' (0xE9) must survive the round-trip.");
     }
 
     [Test]
@@ -535,8 +707,74 @@ public class FunctionalTests
             ThrowErrorOnFailure = true,
         };
 
-        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(input, connection, options, CancellationToken.None));
-        Assert.That(ex.Message, Does.Contain("EncodingInString"));
+        var ex = Assert.ThrowsAsync<Exception>(() => Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None));
+        Assert.That(
+            ex.Message,
+            Does.Contain("EncodingInString"));
+    }
+
+    [Test]
+    public async Task ShouldSucceed_WhenClientCertThumbprintMatches_AndIgnoreIsFalse()
+    {
+        var port = GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+
+        using var expectedClientCert = new X509Certificate2(
+            _clientPfxPath,
+            _password);
+        var expectedClientThumbprint = expectedClientCert.GetCertHashString();
+
+        var connection = new Connection
+        {
+            TlsMode = TlsMode.Mtls,
+            ServerCertPath = _serverPfxPath,
+            ServerCertPassword = _password,
+            IgnoreClientCertificateErrors = false,
+            ClientCertificateThumbprints =
+            [
+                expectedClientThumbprint,
+            ],
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+
+        var serverTask = Mllp.Receive(
+            input,
+            connection,
+            new Options(),
+            CancellationToken.None);
+
+        var senderTask = Task.Run(async () =>
+        {
+            await Task.Delay(1000);
+
+            return await SendMessageAsync(
+                port,
+                "MSG|PINNED_CERT_OK",
+                _clientPfxPath,
+                _password);
+        });
+
+        await Task.WhenAll(
+            serverTask,
+            senderTask).WaitAsync(TimeSpan.FromSeconds(20));
+
+        var result = await serverTask;
+
+        Assert.That(
+            result.Success,
+            Is.True);
+        Assert.That(
+            result.Output,
+            Has.Length.EqualTo(1));
     }
 
     private static async Task<string> SendMessageAsync(
@@ -552,7 +790,9 @@ public class FunctionalTests
         {
             try
             {
-                await client.ConnectAsync(IPAddress.Loopback, port);
+                await client.ConnectAsync(
+                    IPAddress.Loopback,
+                    port);
 
                 break;
             }
@@ -571,9 +811,13 @@ public class FunctionalTests
 
             if (!string.IsNullOrEmpty(clientCertPath))
             {
-                sslStream = new SslStream(currentStream, true);
+                sslStream = new SslStream(
+                    currentStream,
+                    true);
 
-                using var clientCert = new X509Certificate2(clientCertPath, password);
+                using var clientCert = new X509Certificate2(
+                    clientCertPath,
+                    password);
                 var clientCerts = new X509Certificate2Collection(clientCert);
 
                 var sslOptions = new SslClientAuthenticationOptions
@@ -585,7 +829,9 @@ public class FunctionalTests
                     RemoteCertificateValidationCallback = (_, _, _, _) => true,
                 };
 
-                await sslStream.AuthenticateAsClientAsync(sslOptions, CancellationToken.None);
+                await sslStream.AuthenticateAsClientAsync(
+                    sslOptions,
+                    CancellationToken.None);
                 currentStream = sslStream;
             }
 
@@ -593,7 +839,10 @@ public class FunctionalTests
             var payload = $"\u000b{message}\u001c\r";
             var bytes = sendEncoding.GetBytes(payload);
 
-            await currentStream.WriteAsync(bytes, 0, bytes.Length);
+            await currentStream.WriteAsync(
+                bytes,
+                0,
+                bytes.Length);
             await currentStream.FlushAsync();
 
             var buffer = new byte[8192];
@@ -601,11 +850,18 @@ public class FunctionalTests
 
             try
             {
-                var read = await currentStream.ReadAsync(buffer, 0, buffer.Length, readCts.Token);
+                var read = await currentStream.ReadAsync(
+                    buffer,
+                    0,
+                    buffer.Length,
+                    readCts.Token);
 
                 if (read <= 0) return string.Empty;
 
-                var ackPayload = Encoding.UTF8.GetString(buffer, 0, read);
+                var ackPayload = Encoding.UTF8.GetString(
+                    buffer,
+                    0,
+                    read);
 
                 return StripMllpFrame(ackPayload);
             }
@@ -628,7 +884,9 @@ public class FunctionalTests
         var trimmed = framed;
         if (trimmed[0] == '\u000b')
             trimmed = trimmed[1..];
-        if (trimmed.EndsWith("\u001c\r", StringComparison.Ordinal))
+        if (trimmed.EndsWith(
+            "\u001c\r",
+            StringComparison.Ordinal))
             trimmed = trimmed[..^2];
 
         return trimmed;
@@ -636,7 +894,9 @@ public class FunctionalTests
 
     private static int GetAvailablePort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        var listener = new TcpListener(
+            IPAddress.Loopback,
+            0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();

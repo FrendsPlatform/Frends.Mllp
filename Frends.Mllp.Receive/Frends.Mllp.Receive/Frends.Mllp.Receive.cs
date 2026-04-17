@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
@@ -123,6 +123,12 @@ public static class Mllp
                 "EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(connection));
         }
 
+        if (connection.TlsMode == TlsMode.Mtls && !connection.IgnoreClientCertificateErrors && connection.ClientCertificateThumbprints.Length <= 0)
+        {
+            throw new ArgumentException(
+                "You must provide at least one valid client certificate thumbprint.", nameof(connection));
+        }
+
         if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
             throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
     }
@@ -207,20 +213,20 @@ public static class Mllp
                         ClientCertificateRequired = true,
                         EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                         CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                        RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+                        RemoteCertificateValidationCallback = (_, cert, _, errors) =>
                         {
-                            if (connection.IgnoreClientCertificateErrors)
-                                return true;
+                            if (connection.IgnoreClientCertificateErrors) return true;
+                            if (connection.ClientCertificateThumbprints.Length <= 0)
+                                return errors == SslPolicyErrors.None;
 
-                            return errors == SslPolicyErrors.None;
+                            var thumbprint = cert?.GetCertHashString() ?? string.Empty;
+
+                            return connection.ClientCertificateThumbprints.Contains(thumbprint);
                         },
                     };
                 }
 
-                opt.Listeners = new List<ListenOptions>
-                {
-                    listener,
-                };
+                opt.Listeners = [listener];
             })
             .Build();
     }
@@ -284,8 +290,7 @@ public static class Mllp
                 },
                 new[]
                 {
-                    EndBlockByte,
-                    CarriageReturnByte,
+                    EndBlockByte, CarriageReturnByte,
                 })
         {
             this.encoding = encoding;
