@@ -216,7 +216,7 @@ public static class Mllp
                             if (cert is null) return false;
                             var thumbprint = Normalize(cert.GetCertHashString());
 
-                            return Array.Exists(
+                            return errors == SslPolicyErrors.None && Array.Exists(
                                 connection.ClientCertificateThumbprints,
                                 expected => !string.IsNullOrWhiteSpace(expected) &&
                                             Normalize(expected).Equals(thumbprint, StringComparison.OrdinalIgnoreCase));

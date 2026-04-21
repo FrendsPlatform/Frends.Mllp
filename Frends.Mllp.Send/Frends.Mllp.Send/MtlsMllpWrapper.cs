@@ -52,7 +52,7 @@ internal class MtlsMllpWrapper : IDisposable
             if (cert is null) return false;
             var thumbprint = Normalize(cert.GetCertHashString());
 
-            return Array.Exists(
+            return errors == SslPolicyErrors.None && Array.Exists(
                 serverCertificateThumbprints,
                 expected => !string.IsNullOrWhiteSpace(expected) &&
                             Normalize(expected).Equals(thumbprint, StringComparison.OrdinalIgnoreCase));
