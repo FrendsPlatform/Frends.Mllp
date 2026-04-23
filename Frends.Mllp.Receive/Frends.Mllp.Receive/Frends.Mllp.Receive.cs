@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Net;
 using System.Net.Security;
@@ -207,23 +206,32 @@ public static class Mllp
                         ClientCertificateRequired = true,
                         EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                         CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                        RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+                        RemoteCertificateValidationCallback = (_, cert, _, errors) =>
                         {
-                            if (connection.IgnoreClientCertificateErrors)
-                                return true;
+                            if (connection.IgnoreClientCertificateErrors) return true;
+                            if (connection.ClientCertificateThumbprints.Length <= 0)
+                                return errors == SslPolicyErrors.None;
 
-                            return errors == SslPolicyErrors.None;
+                            if (cert is null) return false;
+                            var thumbprint = Normalize(cert.GetCertHashString());
+
+                            return errors != SslPolicyErrors.RemoteCertificateNotAvailable && Array.Exists(
+                                connection.ClientCertificateThumbprints,
+                                expected => !string.IsNullOrWhiteSpace(expected) &&
+                                            Normalize(expected).Equals(thumbprint, StringComparison.OrdinalIgnoreCase));
                         },
                     };
                 }
 
-                opt.Listeners = new List<ListenOptions>
-                {
-                    listener,
-                };
+                opt.Listeners = [listener];
             })
             .Build();
     }
+
+    private static string Normalize(string value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 
     private static string BuildAcknowledgement(string message, Connection connection)
     {
@@ -284,8 +292,7 @@ public static class Mllp
                 },
                 new[]
                 {
-                    EndBlockByte,
-                    CarriageReturnByte,
+                    EndBlockByte, CarriageReturnByte,
                 })
         {
             this.encoding = encoding;

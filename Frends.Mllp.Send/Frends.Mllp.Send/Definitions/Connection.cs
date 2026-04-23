@@ -70,6 +70,17 @@ public class Connection
     public bool IgnoreServerCertificateErrors { get; set; } = false;
 
     /// <summary>
+    /// Expected server certificate thumbprint(s) for validation.
+    /// Only used when IgnoreServerCertificateErrors is false.
+    /// Used in MTLS mode for certificate pinning.
+    /// </summary>
+    /// <example>E5FA62B8B5F3B0B2B3B4B5B6B7B8B9B0B1B2B3B4</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    [UIHint(nameof(TlsMode), "", TlsMode.Mtls)]
+    public string[] ServerCertificateThumbprints { get; set; } = [];
+
+    /// <summary>
     /// Encoding used to encode the HL7 message before sending.
     /// </summary>
     /// <example>FileEncoding.UTF8</example>
