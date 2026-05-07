@@ -57,11 +57,20 @@ public static class Mllp
 
                     if (options.ExpectAcknowledgement)
                     {
-                        acknowledgement = wrapper.Send(message, receiveTimeoutMs);
+                        acknowledgement = wrapper.Send(
+                            message,
+                            receiveTimeoutMs,
+                            (byte)options.StartBlockByte,
+                            (byte)options.EndBlockByte,
+                            (byte)options.CarriageReturnByte);
                     }
                     else
                     {
-                        wrapper.SendOnly(message);
+                        wrapper.SendOnly(
+                            message,
+                            (byte)options.StartBlockByte,
+                            (byte)options.EndBlockByte,
+                            (byte)options.CarriageReturnByte);
                     }
 
                     return new Result
