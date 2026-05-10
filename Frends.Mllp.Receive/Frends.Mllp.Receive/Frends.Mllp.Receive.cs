@@ -29,13 +29,6 @@ namespace Frends.Mllp.Receive;
 /// </summary>
 public static class Mllp
 {
-    private const char StartBlock = '\u000b';
-    private const char EndBlock = '\u001c';
-    private const char CarriageReturn = '\r';
-    private const byte StartBlockByte = 0x0b;
-    private const byte EndBlockByte = 0x1c;
-    private const byte CarriageReturnByte = 0x0d;
-
     /// <summary>
     /// Starts an MLLP server that collects incoming HL7 messages for the configured duration.
     /// [Documentation](https://tasks.frends.com/tasks/frends-tasks/Frends-Mllp-Receive)
@@ -68,7 +61,7 @@ public static class Mllp
                 serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
             }
 
-            using var host = BuildMllpHost(input, connection, encoding, messages, serverCert);
+            using var host = BuildMllpHost(input, connection, options, encoding, messages, serverCert);
 
             await host.StartAsync(cancellationToken);
 
@@ -150,6 +143,7 @@ public static class Mllp
     private static IHost BuildMllpHost(
         Input input,
         Connection connection,
+        Options options,
         Encoding encoding,
         ConcurrentQueue<string> messages,
         X509Certificate2 serverCert)
@@ -160,6 +154,12 @@ public static class Mllp
             .ConfigureServices((_, services) =>
             {
                 services.AddSingleton(encoding);
+                services.AddSingleton(new MllpFramingBytes
+                {
+                    StartBlock = (byte)options.StartBlockByte,
+                    EndBlock = (byte)options.EndBlockByte,
+                    CarriageReturn = (byte)options.CarriageReturnByte,
+                });
             })
             .UsePackageHandler(async (session, package) =>
             {
@@ -175,7 +175,8 @@ public static class Mllp
                     return;
                 }
 
-                var ackMessage = $"{StartBlock}{ackPayload}{EndBlock}{CarriageReturn}";
+                var ackMessage =
+                    $"{(char)options.StartBlockByte}{ackPayload}{(char)options.EndBlockByte}{(char)options.CarriageReturnByte}";
 
                 var ackBytes = encoding.GetBytes(ackMessage);
 
@@ -266,6 +267,31 @@ public static class Mllp
     /// Represents a parsed MLLP payload.
     /// </summary>
     /// <example>MSH|^~\&amp;|HIS|RIH|...</example>
+    private sealed class MllpFramingBytes
+    {
+        /// <summary>
+        /// Start block byte.
+        /// </summary>
+        /// <example>11</example>
+        public byte StartBlock { get; init; }
+
+        /// <summary>
+        /// End block byte.
+        /// </summary>
+        /// <example>28</example>
+        public byte EndBlock { get; init; }
+
+        /// <summary>
+        /// Carriage return byte.
+        /// </summary>
+        /// <example>13</example>
+        public byte CarriageReturn { get; init; }
+    }
+
+    /// <summary>
+    /// Represents a parsed MLLP payload.
+    /// </summary>
+    /// <example>MSH|^~\&amp;|HIS|RIH|...</example>
     private sealed class MllpPackage
     {
         public MllpPackage(string payload) => Payload = payload;
@@ -284,15 +310,15 @@ public static class Mllp
     {
         private readonly Encoding encoding;
 
-        public MllpPipelineFilter(Encoding encoding)
+        public MllpPipelineFilter(Encoding encoding, MllpFramingBytes framing)
             : base(
                 new[]
                 {
-                    StartBlockByte,
+                    framing.StartBlock,
                 },
                 new[]
                 {
-                    EndBlockByte, CarriageReturnByte,
+                    framing.EndBlock, framing.CarriageReturn,
                 })
         {
             this.encoding = encoding;
