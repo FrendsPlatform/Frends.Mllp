@@ -13,9 +13,22 @@ namespace Frends.Mllp.Receive.Tests;
 
 public static class Helpers
 {
+    internal static Task<string> SendMessageAsync(
+        int port,
+        string message,
+        string clientCertPath = null,
+        string password = null,
+        Encoding encoding = null)
+    {
+        return SendMessageAsync(port, message, 0x0b, 0x1c, 0x0d, clientCertPath, password, encoding);
+    }
+
     internal static async Task<string> SendMessageAsync(
         int port,
         string message,
+        byte startBlock,
+        byte endBlock,
+        byte carriageReturn,
         string clientCertPath = null,
         string password = null,
         Encoding encoding = null)
@@ -72,8 +85,12 @@ public static class Helpers
             }
 
             var sendEncoding = encoding ?? Encoding.UTF8;
-            var payload = $"\u000b{message}\u001c\r";
-            var bytes = sendEncoding.GetBytes(payload);
+            var messageBytes = sendEncoding.GetBytes(message);
+            var bytes = new byte[messageBytes.Length + 3];
+            bytes[0] = startBlock;
+            Buffer.BlockCopy(messageBytes, 0, bytes, 1, messageBytes.Length);
+            bytes[^2] = endBlock;
+            bytes[^1] = carriageReturn;
 
             await currentStream.WriteAsync(
                 bytes,
