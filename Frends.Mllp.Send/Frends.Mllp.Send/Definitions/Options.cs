@@ -27,21 +27,21 @@ public class Options
     /// </summary>
     /// <example>11</example>
     [DefaultValue(11)]
-    public int StartBlockByte { get; set; } = 11;
+    public byte StartBlockByte { get; set; } = 11;
 
     /// <summary>
     /// The MLLP end-block framing byte (decimal). Default is 28 (0x1C, file separator).
     /// </summary>
     /// <example>28</example>
     [DefaultValue(28)]
-    public int EndBlockByte { get; set; } = 28;
+    public byte EndBlockByte { get; set; } = 28;
 
     /// <summary>
     /// The MLLP end-of-block trailer byte (decimal). Default is 13 (0x0D, carriage return).
     /// </summary>
     /// <example>13</example>
     [DefaultValue(13)]
-    public int CarriageReturnByte { get; set; } = 13;
+    public byte CarriageReturnByte { get; set; } = 13;
 
     /// <summary>
     /// Whether to throw an error on failure.
