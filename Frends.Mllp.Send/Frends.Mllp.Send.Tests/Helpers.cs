@@ -9,14 +9,21 @@ namespace Frends.Mllp.Send.Tests;
 
 internal static class Helpers
 {
-    internal static async Task<string> ReadMllpMessage(
+    internal static Task<string> ReadMllpMessage(
         Stream stream,
         Encoding encoding,
         CancellationToken cancellationToken)
     {
-        const byte startBlock = 0x0b;
-        const byte endBlock = 0x1c;
+        return ReadMllpMessage(stream, encoding, cancellationToken, 0x0b, 0x1c);
+    }
 
+    internal static async Task<string> ReadMllpMessage(
+        Stream stream,
+        Encoding encoding,
+        CancellationToken cancellationToken,
+        byte startBlock,
+        byte endBlock)
+    {
         using var messageBuffer = new MemoryStream();
         var buffer = new byte[1];
         var started = false;

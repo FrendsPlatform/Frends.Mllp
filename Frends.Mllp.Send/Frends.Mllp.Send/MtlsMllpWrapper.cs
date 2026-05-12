@@ -7,7 +7,6 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using NHapiTools.Base.Net;
-using NHapiTools.Base.Util;
 
 internal class MtlsMllpWrapper : IDisposable
 {
@@ -66,21 +65,95 @@ internal class MtlsMllpWrapper : IDisposable
         _activeStream = sslStream;
     }
 
-    internal string Send(string message, double timeout)
+    internal string Send(string message, double timeoutMs, byte startBlock, byte endBlock, byte carriageReturn)
     {
-        return _client.SendHL7Message(message, timeout);
+        WriteFramed(message, startBlock, endBlock, carriageReturn);
+
+        if (_activeStream.CanTimeout)
+            _activeStream.ReadTimeout = (int)timeoutMs;
+
+        using var responseBuffer = new MemoryStream();
+        var started = false;
+        var pendingEndBlock = false;
+
+        while (true)
+        {
+            int currentValue;
+            try
+            {
+                currentValue = _activeStream.ReadByte();
+            }
+            catch (IOException ex) when (IsReadTimeout(ex))
+            {
+                throw new TimeoutException($"Reading the HL7 reply timed out after {(int)timeoutMs} milliseconds.");
+            }
+
+            if (currentValue == -1)
+                throw new IOException("Connection closed before HL7 reply was fully received.");
+
+            var current = (byte)currentValue;
+
+            if (!started)
+            {
+                if (current == startBlock)
+                    started = true;
+
+                continue;
+            }
+
+            if (pendingEndBlock)
+            {
+                if (current == carriageReturn)
+                    break;
+
+                responseBuffer.WriteByte(endBlock);
+                pendingEndBlock = false;
+            }
+
+            if (current == endBlock)
+            {
+                pendingEndBlock = true;
+                continue;
+            }
+
+            responseBuffer.WriteByte(current);
+        }
+
+        return _encoding.GetString(responseBuffer.ToArray());
     }
 
-    internal void SendOnly(string message)
+    internal void SendOnly(string message, byte startBlock, byte endBlock, byte carriageReturn)
     {
-        string framed = MLLP.CreateMLLPMessage(message);
-        var writer = new StreamWriter(_activeStream, _encoding);
-        writer.Write(framed);
-        writer.Flush();
+        WriteFramed(message, startBlock, endBlock, carriageReturn);
     }
 
     private static string Normalize(string value) =>
         string.IsNullOrEmpty(value)
             ? string.Empty
             : value.Replace(" ", string.Empty).Replace(":", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
+
+    private static bool IsReadTimeout(IOException exception)
+    {
+        if (exception.InnerException is SocketException socketException
+            && socketException.SocketErrorCode == SocketError.TimedOut)
+        {
+            return true;
+        }
+
+        return exception.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void WriteFramed(string message, byte startBlock, byte endBlock, byte carriageReturn)
+    {
+        var payloadBytes = _encoding.GetBytes(message);
+        var framed = new byte[payloadBytes.Length + 3];
+
+        framed[0] = startBlock;
+        Buffer.BlockCopy(payloadBytes, 0, framed, 1, payloadBytes.Length);
+        framed[^2] = endBlock;
+        framed[^1] = carriageReturn;
+
+        _activeStream.Write(framed, 0, framed.Length);
+        _activeStream.Flush();
+    }
 }
