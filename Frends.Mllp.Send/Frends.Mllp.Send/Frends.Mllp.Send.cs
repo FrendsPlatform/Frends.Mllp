@@ -60,17 +60,17 @@ public static class Mllp
                         acknowledgement = wrapper.Send(
                             message,
                             receiveTimeoutMs,
-                            (byte)options.StartBlockByte,
-                            (byte)options.EndBlockByte,
-                            (byte)options.CarriageReturnByte);
+                            options.StartBlockByte,
+                            options.EndBlockByte,
+                            options.CarriageReturnByte);
                     }
                     else
                     {
                         wrapper.SendOnly(
                             message,
-                            (byte)options.StartBlockByte,
-                            (byte)options.EndBlockByte,
-                            (byte)options.CarriageReturnByte);
+                            options.StartBlockByte,
+                            options.EndBlockByte,
+                            options.CarriageReturnByte);
                     }
 
                     return new Result

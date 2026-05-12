@@ -156,9 +156,9 @@ public static class Mllp
                 services.AddSingleton(encoding);
                 services.AddSingleton(new MllpFramingBytes
                 {
-                    StartBlock = (byte)options.StartBlockByte,
-                    EndBlock = (byte)options.EndBlockByte,
-                    CarriageReturn = (byte)options.CarriageReturnByte,
+                    StartBlock = options.StartBlockByte,
+                    EndBlock = options.EndBlockByte,
+                    CarriageReturn = options.CarriageReturnByte,
                 });
             })
             .UsePackageHandler(async (session, package) =>
