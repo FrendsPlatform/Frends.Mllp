@@ -41,6 +41,7 @@ public class Options
     /// </summary>
     /// <example>6</example>
     [DefaultValue(6)]
+    [UIHint(nameof(AcknowledgementFormat), "", AcknowledgementFormat.ControlByte)]
     public byte AcknowledgementByte { get; set; } = 0x06;
 
     /// <summary>
@@ -48,6 +49,7 @@ public class Options
     /// </summary>
     /// <example>21</example>
     [DefaultValue(21)]
+    [UIHint(nameof(AcknowledgementFormat), "", AcknowledgementFormat.ControlByte)]
     public byte NegativeAcknowledgementByte { get; set; } = 0x15;
 
     /// <summary>
