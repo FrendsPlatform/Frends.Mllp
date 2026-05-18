@@ -822,4 +822,49 @@ public class FunctionalTests
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
     }
+
+    [Test]
+    public async Task ShouldSendControlByteAcknowledgementWithCustomFramingBytes()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 10,
+            BufferSize = 1024,
+        };
+        var options = new Options
+        {
+            StartBlockByte = 1,
+            EndBlockByte = 2,
+            CarriageReturnByte = 13,
+            AcknowledgementFormat = AcknowledgementFormat.ControlByte,
+        };
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAndReadAcknowledgementBytesAsync(
+                port,
+                "MSH|^~\\&|SNDAPP|SNDFAC|RCVAPP|RCVFAC|20250101010101||ORM^O01|CTRL123|P|2.5",
+                startBlock: 1,
+                endBlock: 2,
+                carriageReturn: 13);
+        });
+
+        var result = await Mllp.Receive(
+            input,
+            connection,
+            options,
+            CancellationToken.None);
+        var acknowledgementBytes = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(acknowledgementBytes, Is.EqualTo(new byte[] { 0x01, 0x06, 0x02, 0x0D }));
+    }
 }

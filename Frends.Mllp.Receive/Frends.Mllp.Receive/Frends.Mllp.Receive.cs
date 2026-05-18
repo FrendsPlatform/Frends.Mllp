@@ -168,17 +168,11 @@ public static class Mllp
                 if (!connection.SendAcknowledgement)
                     return;
 
-                var ackPayload = BuildAcknowledgement(package.Payload, connection);
-
-                if (string.IsNullOrEmpty(ackPayload))
+                var ackBytes = BuildAcknowledgementBytes(package.Payload, connection, options, encoding);
+                if (ackBytes.Length == 0)
                 {
                     return;
                 }
-
-                var ackMessage =
-                    $"{(char)options.StartBlockByte}{ackPayload}{(char)options.EndBlockByte}{(char)options.CarriageReturnByte}";
-
-                var ackBytes = encoding.GetBytes(ackMessage);
 
                 try
                 {
@@ -227,6 +221,35 @@ public static class Mllp
                 opt.Listeners = [listener];
             })
             .Build();
+    }
+
+    private static byte[] BuildAcknowledgementBytes(
+        string message,
+        Connection connection,
+        Options options,
+        Encoding encoding)
+    {
+        if (options.AcknowledgementFormat == AcknowledgementFormat.ControlByte)
+        {
+            return
+            [
+                options.StartBlockByte,
+                options.AcknowledgementByte,
+                options.EndBlockByte,
+                options.CarriageReturnByte,
+            ];
+        }
+
+        var ackPayload = BuildAcknowledgement(message, connection);
+        if (string.IsNullOrEmpty(ackPayload))
+        {
+            return [];
+        }
+
+        var ackMessage =
+            $"{(char)options.StartBlockByte}{ackPayload}{(char)options.EndBlockByte}{(char)options.CarriageReturnByte}";
+
+        return encoding.GetBytes(ackMessage);
     }
 
     private static string Normalize(string value) =>

@@ -33,6 +33,100 @@ public static class Helpers
         string password = null,
         Encoding encoding = null)
     {
+        var ackBytes = await SendMessageAndReadAcknowledgementBytesAsync(
+            port,
+            message,
+            startBlock,
+            endBlock,
+            carriageReturn,
+            clientCertPath,
+            password,
+            encoding);
+
+        if (ackBytes.Length == 0) return string.Empty;
+
+        var ackPayload = Encoding.UTF8.GetString(ackBytes);
+        return StripMllpFrame(ackPayload);
+    }
+
+    internal static Task<byte[]> SendMessageAndReadAcknowledgementBytesAsync(
+        int port,
+        string message,
+        byte startBlock,
+        byte endBlock,
+        byte carriageReturn,
+        string clientCertPath = null,
+        string password = null,
+        Encoding encoding = null)
+    {
+        return SendMessageAndReadAcknowledgementBytesAsyncInternal(
+            port,
+            message,
+            startBlock,
+            endBlock,
+            carriageReturn,
+            clientCertPath,
+            password,
+            encoding);
+    }
+
+    internal static string StripMllpFrame(string framed)
+    {
+        if (string.IsNullOrEmpty(framed))
+            return framed;
+
+        var trimmed = framed;
+        if (trimmed[0] == '\u000b')
+            trimmed = trimmed[1..];
+        if (trimmed.EndsWith(
+                "\u001c\r",
+                StringComparison.Ordinal))
+            trimmed = trimmed[..^2];
+
+        return trimmed;
+    }
+
+    internal static int GetAvailablePort()
+    {
+        var listener = new TcpListener(
+            IPAddress.Loopback,
+            0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        return port;
+    }
+
+    internal static CertificateStoreCleanup TrustCertificateForCurrentUserRoot(string pfxPath, string password)
+    {
+        using var certificateWithPrivateKey = new X509Certificate2(pfxPath, password);
+        using var certificate = new X509Certificate2(certificateWithPrivateKey.Export(X509ContentType.Cert));
+        using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+
+        var existing = store.Certificates.Find(
+            X509FindType.FindByThumbprint,
+            certificate.Thumbprint,
+            validOnly: false);
+
+        if (existing.Count > 0) return null;
+
+        store.Add(certificate);
+
+        return new CertificateStoreCleanup(StoreName.Root, StoreLocation.CurrentUser, certificate.Thumbprint);
+    }
+
+    private static async Task<byte[]> SendMessageAndReadAcknowledgementBytesAsyncInternal(
+        int port,
+        string message,
+        byte startBlock,
+        byte endBlock,
+        byte carriageReturn,
+        string clientCertPath = null,
+        string password = null,
+        Encoding encoding = null)
+    {
         using var client = new TcpClient();
 
         for (int i = 0; i < 10; i++)
@@ -109,70 +203,20 @@ public static class Helpers
                     buffer.Length,
                     readCts.Token);
 
-                if (read <= 0) return string.Empty;
+                if (read <= 0) return [];
 
-                var ackPayload = Encoding.UTF8.GetString(
-                    buffer,
-                    0,
-                    read);
-
-                return StripMllpFrame(ackPayload);
+                var ackBytes = new byte[read];
+                Buffer.BlockCopy(buffer, 0, ackBytes, 0, read);
+                return ackBytes;
             }
             catch (OperationCanceledException)
             {
-                return string.Empty;
+                return [];
             }
         }
         finally
         {
             if (sslStream != null) await sslStream.DisposeAsync();
         }
-    }
-
-    internal static string StripMllpFrame(string framed)
-    {
-        if (string.IsNullOrEmpty(framed))
-            return framed;
-
-        var trimmed = framed;
-        if (trimmed[0] == '\u000b')
-            trimmed = trimmed[1..];
-        if (trimmed.EndsWith(
-                "\u001c\r",
-                StringComparison.Ordinal))
-            trimmed = trimmed[..^2];
-
-        return trimmed;
-    }
-
-    internal static int GetAvailablePort()
-    {
-        var listener = new TcpListener(
-            IPAddress.Loopback,
-            0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-
-        return port;
-    }
-
-    internal static CertificateStoreCleanup TrustCertificateForCurrentUserRoot(string pfxPath, string password)
-    {
-        using var certificateWithPrivateKey = new X509Certificate2(pfxPath, password);
-        using var certificate = new X509Certificate2(certificateWithPrivateKey.Export(X509ContentType.Cert));
-        using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
-        store.Open(OpenFlags.ReadWrite);
-
-        var existing = store.Certificates.Find(
-            X509FindType.FindByThumbprint,
-            certificate.Thumbprint,
-            validOnly: false);
-
-        if (existing.Count > 0) return null;
-
-        store.Add(certificate);
-
-        return new CertificateStoreCleanup(StoreName.Root, StoreLocation.CurrentUser, certificate.Thumbprint);
     }
 }
