@@ -45,7 +45,7 @@ public class Options
     public byte AcknowledgementByte { get; set; } = 0x06;
 
     /// <summary>
-    /// Negative acknowledgement control byte reserved for control-byte acknowledgement flows.
+    /// Negative acknowledgement control byte reserved for future control-byte acknowledgement flows.
     /// </summary>
     /// <example>21</example>
     [DefaultValue(21)]
