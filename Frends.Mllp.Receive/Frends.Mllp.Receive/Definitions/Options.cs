@@ -45,14 +45,6 @@ public class Options
     public byte AcknowledgementByte { get; set; } = 0x06;
 
     /// <summary>
-    /// Negative acknowledgement control byte reserved for future control-byte acknowledgement flows.
-    /// </summary>
-    /// <example>21</example>
-    [DefaultValue(21)]
-    [UIHint(nameof(AcknowledgementFormat), "", AcknowledgementFormat.ControlByte)]
-    public byte NegativeAcknowledgementByte { get; set; } = 0x15;
-
-    /// <summary>
     /// Whether to throw an error on failure.
     /// </summary>
     /// <example>false</example>

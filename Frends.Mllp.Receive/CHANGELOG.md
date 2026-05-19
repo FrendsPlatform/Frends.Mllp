@@ -5,7 +5,7 @@
 ### Added
 
 - `Options.AcknowledgementFormat` with `Hl7` (default) and `ControlByte` to configure outbound acknowledgement format.
-- `Options.AcknowledgementByte` (default `0x06`) and `Options.NegativeAcknowledgementByte` (default `0x15`) for control-byte acknowledgement protocols.
+- `Options.AcknowledgementByte` (default `0x06`) for the positive control-byte acknowledgement value.
 
 ## [1.3.0] - 2026-05-06
 
