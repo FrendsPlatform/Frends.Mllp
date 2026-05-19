@@ -51,3 +51,19 @@ public enum FileEncoding
     /// </summary>
     Other,
 }
+
+/// <summary>
+/// Specifies how acknowledgement responses are sent after a successful receive.
+/// </summary>
+public enum AcknowledgementFormat
+{
+    /// <summary>
+    /// Sends a standard HL7 ACK message wrapped in configured framing bytes.
+    /// </summary>
+    Hl7,
+
+    /// <summary>
+    /// Sends a framed single-byte control acknowledgement.
+    /// </summary>
+    ControlByte,
+}

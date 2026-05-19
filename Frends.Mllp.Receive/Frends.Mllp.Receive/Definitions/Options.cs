@@ -30,6 +30,21 @@ public class Options
     public byte CarriageReturnByte { get; set; } = 13;
 
     /// <summary>
+    /// Format used for outbound acknowledgement responses.
+    /// </summary>
+    /// <example>AcknowledgementFormat.Hl7</example>
+    [DefaultValue(AcknowledgementFormat.Hl7)]
+    public AcknowledgementFormat AcknowledgementFormat { get; set; } = AcknowledgementFormat.Hl7;
+
+    /// <summary>
+    /// Positive acknowledgement control byte used when AcknowledgementFormat is set to ControlByte.
+    /// </summary>
+    /// <example>6</example>
+    [DefaultValue(6)]
+    [UIHint(nameof(AcknowledgementFormat), "", AcknowledgementFormat.ControlByte)]
+    public byte AcknowledgementByte { get; set; } = 0x06;
+
+    /// <summary>
     /// Whether to throw an error on failure.
     /// </summary>
     /// <example>false</example>
