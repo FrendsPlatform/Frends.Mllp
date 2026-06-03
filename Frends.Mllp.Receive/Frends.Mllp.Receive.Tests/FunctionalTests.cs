@@ -867,4 +867,643 @@ public class FunctionalTests
         Assert.That(result.Output, Has.Length.EqualTo(1));
         Assert.That(acknowledgementBytes, Is.EqualTo(new byte[] { 0x01, 0x06, 0x02, 0x0D }));
     }
+
+    [Test]
+    public async Task ShouldRejectConnectionWhenMaxConcurrentConnectionsExceeded()
+    {
+        var logPath = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}.log");
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 6,
+            BufferSize = 1024,
+            SendAcknowledgement = false,
+        };
+        var options = new Options
+        {
+            MaxConcurrentConnections = 2,
+            EnableLogging = true,
+            LogFilePath = logPath,
+        };
+
+        var firstTwoConnectionsEstablished = new TaskCompletionSource<bool>();
+        var connectionCount = 0;
+
+        var sender1 = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            var startBytes = new byte[] { 0x0b };
+            await stream.WriteAsync(startBytes, 0, startBytes.Length);
+            await stream.FlushAsync();
+
+            if (Interlocked.Increment(ref connectionCount) == 2)
+                firstTwoConnectionsEstablished.SetResult(true);
+
+            await Task.Delay(2000);
+
+            var msgBytes = Encoding.UTF8.GetBytes("MSH|^~\\&|FIRST\u001c\r");
+            await stream.WriteAsync(msgBytes, 0, msgBytes.Length);
+            await stream.FlushAsync();
+            await Task.Delay(200);
+        });
+
+        var sender2 = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            var startBytes = new byte[] { 0x0b };
+            await stream.WriteAsync(startBytes, 0, startBytes.Length);
+            await stream.FlushAsync();
+
+            if (Interlocked.Increment(ref connectionCount) == 2)
+                firstTwoConnectionsEstablished.SetResult(true);
+
+            await Task.Delay(2000);
+
+            var msgBytes = Encoding.UTF8.GetBytes("MSH|^~\\&|SECOND\u001c\r");
+            await stream.WriteAsync(msgBytes, 0, msgBytes.Length);
+            await stream.FlushAsync();
+            await Task.Delay(200);
+        });
+
+        var sender3 = Task.Run(async () =>
+        {
+            await firstTwoConnectionsEstablished.Task;
+            await Task.Delay(300);
+
+            try
+            {
+                using var client = new TcpClient();
+                await client.ConnectAsync(IPAddress.Loopback, port);
+                using var stream = client.GetStream();
+
+                var msgBytes = Encoding.UTF8.GetBytes("\u000bMSH|^~\\&|THIRD\u001c\r");
+                await stream.WriteAsync(msgBytes, 0, msgBytes.Length);
+                await stream.FlushAsync();
+                await Task.Delay(500);
+            }
+            catch
+            {
+                // Ignore - connection may be closed
+            }
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await Task.WhenAll(sender1, sender2, sender3);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output.Length, Is.EqualTo(2), "Only two messages should be received");
+
+        var logContent = await File.ReadAllTextAsync(logPath);
+        Assert.That(logContent, Does.Contain("CONNECTION REJECTED"));
+        Assert.That(logContent, Does.Contain("Max concurrent connections limit"));
+
+        File.Delete(logPath);
+    }
+
+    [Test]
+    public async Task ShouldAcceptAllConnectionsWhenMaxConcurrentConnectionsIsZero()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 10,
+            BufferSize = 1024,
+        };
+        var options = new Options
+        {
+            MaxConcurrentConnections = 0,
+        };
+
+        var serverTask = Mllp.Receive(input, connection, options, CancellationToken.None);
+
+        await Task.Delay(500);
+
+        var senderTasks = Enumerable.Range(0, 5).Select(i => Task.Run(async () =>
+        {
+            await Task.Delay(i * 100);
+            await Helpers.SendMessageAsync(
+                port,
+                $"MSH|^~\\&|MSG{i}|FAC|RCV|FAC|20250101||ADT^A01|ID{i}|P|2.5");
+        })).ToArray();
+
+        await Task.WhenAll(senderTasks);
+
+        await Task.Delay(500);
+
+        var result = await serverTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(5), "All 5 messages should be accepted when MaxConcurrentConnections is 0 (unlimited)");
+
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.That(result.Output, Has.Some.Contains($"MSG{i}"), $"Message {i} should be present in output");
+        }
+    }
+
+    [Test]
+    public async Task ShouldRejectMessageExceedingMaxMessageSize()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 4096,
+        };
+        var options = new Options
+        {
+            MaxMessageSize = 50,
+        };
+
+        var largeMessage = "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5|" +
+                           new string('X', 100);
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await Helpers.SendMessageAsync(port, largeMessage);
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Is.Empty);
+    }
+
+    [Test]
+    public async Task ShouldAcceptMessageWithinMaxMessageSize()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 4096,
+        };
+        var options = new Options
+        {
+            MaxMessageSize = 500,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+    }
+
+    [Test]
+    public async Task ShouldReceiveMessageWithoutCarriageReturnWhenNotRequired()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            SendAcknowledgement = false,
+        };
+        var options = new Options
+        {
+            CarriageReturnRequired = false,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            var payload = Encoding.UTF8.GetBytes(
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|199904140038||ADT^A01|MSG00001|P|2.5");
+            var bytes = new byte[payload.Length + 2];
+            bytes[0] = 0x0b;
+            Buffer.BlockCopy(payload, 0, bytes, 1, payload.Length);
+            bytes[^1] = 0x1c;
+
+            await stream.WriteAsync(bytes, 0, bytes.Length);
+            await stream.FlushAsync();
+            await Task.Delay(500);
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(result.Output.First(), Does.Contain("MSH|^~\\&|HIS|RIH"));
+    }
+
+    [Test]
+    public async Task ShouldLogMessageEventsToFile()
+    {
+        var logPath = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}.log");
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options
+        {
+            EnableLogging = true,
+            LogFilePath = logPath,
+            LogMessageContent = true,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|199904140038||ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(File.Exists(logPath), Is.True, "Log file should be created");
+
+        var logContent = await File.ReadAllTextAsync(logPath);
+        Assert.That(logContent, Does.Contain("MESSAGE RECEIVED"));
+        Assert.That(logContent, Does.Contain("SUCCESS"));
+
+        File.Delete(logPath);
+    }
+
+    [Test]
+    public async Task ShouldLogRejectedMessageWhenExceedingSizeLimit()
+    {
+        var logPath = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}.log");
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 4096,
+        };
+        var options = new Options
+        {
+            MaxMessageSize = 20,
+            EnableLogging = true,
+            LogFilePath = logPath,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|199904140038||ADT^A01|MSG00001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Is.Empty);
+        Assert.That(File.Exists(logPath), Is.True);
+
+        var logContent = await File.ReadAllTextAsync(logPath);
+        Assert.That(logContent, Does.Contain("MESSAGE REJECTED"));
+        Assert.That(logContent, Does.Contain("exceeds limit"));
+
+        File.Delete(logPath);
+    }
+
+    [Test]
+    public async Task ShouldSendControlByteNackWhenMessageExceedsSize()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 4096,
+        };
+        var options = new Options
+        {
+            MaxMessageSize = 20,
+            AcknowledgementFormat = AcknowledgementFormat.ControlByte,
+        };
+
+        var largeMessage = "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5|" +
+                           new string('X', 100);
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAndReadAcknowledgementBytesAsync(
+                port,
+                largeMessage,
+                0x0b,
+                0x1c,
+                0x0d);
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ackBytes = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Is.Empty);
+        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x15, 0x1c, 0x0d }),
+            "Should send NACK (0x15) for rejected message");
+    }
+
+    [Test]
+    public async Task ShouldSendHl7NackWithErrorDescriptionWhenMessageExceedsSize()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 4096,
+        };
+        var options = new Options
+        {
+            MaxMessageSize = 20,
+            AcknowledgementFormat = AcknowledgementFormat.Hl7,
+        };
+
+        var largeMessage = "MSH|^~\\&|HIS|RIH|EKG|EKG|198808181126|SECURITY|ADT^A01|MSG00001|P|2.5|" +
+                           new string('X', 100);
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAsync(port, largeMessage);
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ackMessage = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Is.Empty);
+        Assert.That(ackMessage, Does.Contain("MSA|AR"));
+        Assert.That(ackMessage, Does.Contain("Message too large"),
+            "NACK should contain error description in MSA-3");
+    }
+
+    [Test]
+    public async Task ShouldUseConfiguredAckSenderApplication()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            AckSenderApplication = "CUSTOM_ACK_SENDER",
+        };
+        var options = new Options();
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|MSG001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ack = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+
+        var parser = new PipeParser();
+        var ackMessage = parser.Parse(ack);
+        var terser = new Terser(ackMessage);
+
+        Assert.That(terser.Get("/MSH-3"), Is.EqualTo("CUSTOM_ACK_SENDER"),
+            "ACK should use configured sender application");
+    }
+
+    [Test]
+    public async Task ShouldUseConfiguredAckReceiverApplication()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            AckReceiverApplication = "CUSTOM_ACK_RECEIVER",
+        };
+        var options = new Options();
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|MSG001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ack = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+
+        var parser = new PipeParser();
+        var ackMessage = parser.Parse(ack);
+        var terser = new Terser(ackMessage);
+
+        Assert.That(terser.Get("/MSH-5"), Is.EqualTo("CUSTOM_ACK_RECEIVER"),
+            "ACK should use configured receiver application");
+    }
+
+    [Test]
+    public async Task ShouldUseConfiguredHl7Version()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            AckHl7Version = "2.3.1",
+        };
+        var options = new Options();
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|MSG001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ack = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+
+        var parser = new PipeParser();
+        var ackMessage = parser.Parse(ack);
+        var terser = new Terser(ackMessage);
+
+        Assert.That(terser.Get("/MSH-12"), Is.EqualTo("2.3.1"),
+            "ACK should use configured HL7 version");
+    }
+
+    [Test]
+    public async Task ShouldSendAckWithConfiguredAckType()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            AcknowledgementType = "AE", // Application Error
+        };
+        var options = new Options();
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|SENDER|FAC|RECEIVER|FAC|20250101||ADT^A01|MSG001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ack = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+
+        var parser = new PipeParser();
+        var ackMessage = parser.Parse(ack);
+        var terser = new Terser(ackMessage);
+
+        Assert.That(terser.Get("/MSA-1"), Is.EqualTo("AE"),
+            "ACK should use configured type AE (Application Error)");
+    }
+
+    [Test]
+    public async Task ShouldSendControlByteAckWithoutCarriageReturnWhenNotRequired()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options
+        {
+            AcknowledgementFormat = AcknowledgementFormat.ControlByte,
+            CarriageReturnRequired = false,
+        };
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            // Send message without CR
+            var payload = Encoding.UTF8.GetBytes("MSH|^~\\&|APP|FAC|RCV|FAC|20250101||ADT^A01|MSG001|P|2.5");
+            var msgBytes = new byte[payload.Length + 2];
+            msgBytes[0] = 0x0b;
+            Buffer.BlockCopy(payload, 0, msgBytes, 1, payload.Length);
+            msgBytes[^1] = 0x1c; // Only EB, no CR
+
+            await stream.WriteAsync(msgBytes, 0, msgBytes.Length);
+            await stream.FlushAsync();
+
+            // Read ACK
+            var ackBuffer = new byte[10];
+            var read = await stream.ReadAsync(ackBuffer, 0, ackBuffer.Length);
+            return ackBuffer[..read];
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ackBytes = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x06, 0x1c }),
+            "ACK should not include CR when CarriageReturnRequired = false");
+    }
 }

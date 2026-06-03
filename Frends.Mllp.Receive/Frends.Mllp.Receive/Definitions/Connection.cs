@@ -53,12 +53,39 @@ public class Connection
     public bool SendAcknowledgement { get; set; } = true;
 
     /// <summary>
-    /// Payload of the acknowledgement message. Wrapped in MLLP start/end characters automatically.
+    /// ACK type to use. AA = Application Accept, AE = Application Error, AR = Application Reject.
     /// </summary>
-    /// <example>ACK</example>
+    /// <example>AA</example>
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("AA")]
-    public string AcknowledgementMessage { get; set; } = "AA";
+    public string AcknowledgementType { get; set; } = "AA";
+
+    /// <summary>
+    /// Sender application name (MSH-3) used in the generated ACK message.
+    /// If empty, uses the receiving application (MSH-5) from the incoming message.
+    /// </summary>
+    /// <example>ACK_APP</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string AckSenderApplication { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Receiver application name (MSH-5) used in the generated ACK message.
+    /// If empty, uses the sending application (MSH-3) from the incoming message.
+    /// </summary>
+    /// <example>SENDING_APP</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string AckReceiverApplication { get; set; } = string.Empty;
+
+    /// <summary>
+    /// HL7 version used in the generated ACK message (MSH-12).
+    /// If empty, uses the version from the incoming message.
+    /// </summary>
+    /// <example>2.5</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string AckHl7Version { get; set; } = string.Empty;
 
     /// <summary>
     /// If enabled, the server will accept client certificates even if they are

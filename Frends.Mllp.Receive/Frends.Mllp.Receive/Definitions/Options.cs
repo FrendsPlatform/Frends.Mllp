@@ -30,6 +30,27 @@ public class Options
     public byte CarriageReturnByte { get; set; } = 13;
 
     /// <summary>
+    /// Whether the CarriageReturn character is required. If false, EndBlock marks end of message.
+    /// </summary>
+    /// <example>true</example>
+    [DefaultValue(true)]
+    public bool CarriageReturnRequired { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of concurrent connections allowed. 0 means unlimited.
+    /// </summary>
+    /// <example>10</example>
+    [DefaultValue(0)]
+    public int MaxConcurrentConnections { get; set; } = 0;
+
+    /// <summary>
+    /// Maximum message size in bytes. Messages exceeding this limit will be rejected. 0 means unlimited.
+    /// </summary>
+    /// <example>1048576</example>
+    [DefaultValue(0)]
+    public int MaxMessageSize { get; set; } = 0;
+
+    /// <summary>
     /// Format used for outbound acknowledgement responses.
     /// </summary>
     /// <example>AcknowledgementFormat.Hl7</example>
@@ -58,4 +79,28 @@ public class Options
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     public string ErrorMessageOnFailure { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Enable message processing logging to file.
+    /// </summary>
+    /// <example>true</example>
+    [DefaultValue(false)]
+    public bool EnableLogging { get; set; } = false;
+
+    /// <summary>
+    /// File path for logging message processing events. If not specified, logs to a default location.
+    /// </summary>
+    /// <example>C:\Logs\mllp-messages.log</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    [UIHint(nameof(EnableLogging), "", true)]
+    public string LogFilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Include full message content in logs. If false, only logs message metadata and status.
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    [UIHint(nameof(EnableLogging), "", true)]
+    public bool LogMessageContent { get; set; } = false;
 }

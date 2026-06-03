@@ -66,4 +66,10 @@ public enum AcknowledgementFormat
     /// Sends a framed single-byte control acknowledgement.
     /// </summary>
     ControlByte,
+
+    /// <summary>
+    /// No automatic ACK is generated. The process flow is responsible for providing
+    /// the ACK content. Use this when external logic determines the acknowledgement.
+    /// </summary>
+    ProcessGenerated,
 }
