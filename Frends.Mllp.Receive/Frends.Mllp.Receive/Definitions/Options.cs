@@ -66,21 +66,6 @@ public class Options
     public byte AcknowledgementByte { get; set; } = 0x06;
 
     /// <summary>
-    /// Whether to throw an error on failure.
-    /// </summary>
-    /// <example>false</example>
-    [DefaultValue(true)]
-    public bool ThrowErrorOnFailure { get; set; } = true;
-
-    /// <summary>
-    /// Overrides the error message on failure.
-    /// </summary>
-    /// <example>Custom error message</example>
-    [DisplayFormat(DataFormatString = "Text")]
-    [DefaultValue("")]
-    public string ErrorMessageOnFailure { get; set; } = string.Empty;
-
-    /// <summary>
     /// Enable message processing logging to file.
     /// </summary>
     /// <example>true</example>
@@ -103,4 +88,37 @@ public class Options
     [DefaultValue(false)]
     [UIHint(nameof(EnableLogging), "", true)]
     public bool LogMessageContent { get; set; } = false;
+
+    /// <summary>
+    /// When enabled, received messages are written to temp files instead of returned as strings.
+    /// Output will contain file paths instead of message content.
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    public bool WriteMessagesToFile { get; set; } = false;
+
+    /// <summary>
+    /// Directory for temp files when WriteMessagesToFile is enabled.
+    /// If empty, uses system temp directory.
+    /// </summary>
+    /// <example>C:\Temp\mllp</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    [UIHint(nameof(WriteMessagesToFile), "", true)]
+    public string TempDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether to throw an error on failure.
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(true)]
+    public bool ThrowErrorOnFailure { get; set; } = true;
+
+    /// <summary>
+    /// Overrides the error message on failure.
+    /// </summary>
+    /// <example>Custom error message</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    public string ErrorMessageOnFailure { get; set; } = string.Empty;
 }

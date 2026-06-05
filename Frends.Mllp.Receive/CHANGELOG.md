@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0] - 2026-06-05
+
+### Added
+
+- `WriteMessagesToFile` and `TempDirectory` options to handle streaming messages to temp files instead of memory — Output returns file paths. Users are responsible for managing temp files.
+- `MaxConcurrentConnections` option to limit simultaneous connections — excess connections are rejected and logged.
+- `MaxMessageSize` option to reject oversized messages with a NACK.
+- `EnableLogging`, `LogFilePath` and `LogMessageContent` options to log message events to a file.
+- `StartBlockByte`, `EndBlockByte`, `CarriageReturnByte` and `CarriageReturnRequired` options to configure MLLP framing.
+- `AcknowledgementFormat`, `AckSenderApplication`, `AckReceiverApplication`, `AckHl7Version` and `AcknowledgementType` options to configure ACK/NACK behavior.
+
+### Changed
+
+- ACK generation now uses only the MSH line instead of full payload — fixes crash on large messages.
+- `AcknowledgementMessage` renamed to `AcknowledgementType` in Connection.
+
 ## [1.4.0] - 2026-05-18
 
 ### Added

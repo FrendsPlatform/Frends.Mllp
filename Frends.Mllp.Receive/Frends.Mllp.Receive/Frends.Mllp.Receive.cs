@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
@@ -53,6 +54,7 @@ public static class Mllp
             ValidateParameters(input, connection, options);
 
             var messages = new ConcurrentQueue<string>();
+            var messageFiles = new ConcurrentQueue<string>();
             var encoding = GetEncoding(connection);
 
             logger = new MessageLogger(options.EnableLogging, options.LogFilePath, options.LogMessageContent);
@@ -65,7 +67,7 @@ public static class Mllp
                 serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
             }
 
-            using var host = BuildMllpHost(input, connection, options, encoding, messages, logger, connectionTracker, serverCert);
+            using var host = BuildMllpHost(input, connection, options, encoding, messages, messageFiles, logger, connectionTracker, serverCert);
 
             await host.StartAsync(cancellationToken);
 
@@ -88,7 +90,9 @@ public static class Mllp
             return new Result
             {
                 Success = true,
-                Output = messages.ToArray(),
+                Output = options.WriteMessagesToFile
+                    ? messageFiles.ToArray()
+                    : messages.ToArray(),
                 Error = null,
             };
         }
@@ -157,6 +161,7 @@ public static class Mllp
         Options options,
         Encoding encoding,
         ConcurrentQueue<string> messages,
+        ConcurrentQueue<string> messageFiles,
         MessageLogger logger,
         ConnectionTracker connectionTracker,
         X509Certificate2 serverCert)
@@ -222,7 +227,7 @@ public static class Mllp
 
                     if (connection.SendAcknowledgement)
                     {
-                        var nackBytes = BuildNegativeAcknowledgement(options, encoding, "Message too large");
+                        var nackBytes = BuildNegativeAcknowledgement(package.Payload, options, encoding, "Message too large");
                         try
                         {
                             await session.SendAsync(nackBytes);
@@ -232,13 +237,31 @@ public static class Mllp
                             // Ignore send failures
                         }
                     }
+
                     return;
                 }
 
                 try
                 {
                     logger.LogMessageReceived(package.Payload, sessionId);
-                    messages.Enqueue(package.Payload);
+
+                    if (options.WriteMessagesToFile)
+                    {
+                        var dir = string.IsNullOrWhiteSpace(options.TempDirectory)
+                            ? Path.GetTempPath()
+                            : options.TempDirectory;
+
+                        if (!Directory.Exists(dir))
+                            Directory.CreateDirectory(dir);
+
+                        var filePath = Path.Combine(dir, $"mllp-{Guid.NewGuid()}.hl7");
+                        await File.WriteAllTextAsync(filePath, package.Payload);
+                        messageFiles.Enqueue(filePath);
+                    }
+                    else
+                    {
+                        messages.Enqueue(package.Payload);
+                    }
 
                     if (!connection.SendAcknowledgement)
                     {
@@ -266,12 +289,30 @@ public static class Mllp
                 catch (Exception ex)
                 {
                     logger.LogMessageFailure(package.Payload, sessionId, ex);
+                    if (connection.SendAcknowledgement)
+                    {
+                        var nackBytes = BuildNegativeAcknowledgement(package.Payload, options, encoding, ex.Message);
+                        try
+                        {
+                            await session.SendAsync(nackBytes);
+                        }
+                        catch
+                        {
+                            // Ignore send failures
+                        }
+                    }
                 }
             })
             .ConfigureSuperSocket(opt =>
             {
                 opt.Name = "FrendsMllpServer";
+
                 opt.ReceiveBufferSize = connection.BufferSize;
+
+                opt.MaxPackageLength = options.MaxMessageSize > 0
+                    ? options.MaxMessageSize + 1024
+                    : 100 * 1024 * 1024;
+
                 var listener = new ListenOptions
                 {
                     Ip = listenIp,
@@ -319,11 +360,6 @@ public static class Mllp
             return BuildControlByteAck(options, encoding);
         }
 
-        if (options.AcknowledgementFormat == AcknowledgementFormat.ProcessGenerated)
-        {
-            return [];
-        }
-
         var ackPayload = BuildAcknowledgement(message, connection);
         if (string.IsNullOrEmpty(ackPayload))
         {
@@ -356,26 +392,47 @@ public static class Mllp
         }
     }
 
-    private static byte[] BuildNegativeAcknowledgement(Options options, Encoding encoding, string reason)
+    private static byte[] BuildNegativeAcknowledgement(
+    string message,
+    Options options,
+    Encoding encoding,
+    string reason)
     {
         if (options.AcknowledgementFormat == AcknowledgementFormat.ControlByte)
         {
             if (options.CarriageReturnRequired)
-            {
                 return [options.StartBlockByte, 0x15, options.EndBlockByte, options.CarriageReturnByte];
-            }
             else
-            {
                 return [options.StartBlockByte, 0x15, options.EndBlockByte];
-            }
         }
 
-        if (options.AcknowledgementFormat == AcknowledgementFormat.ProcessGenerated)
+        try
         {
-            return [];
-        }
+            var mshEnd = message?.IndexOf('\r') ?? -1;
+            var mshOnly = mshEnd > 0 ? message[..mshEnd] : message;
 
-        var nackMessage = $"MSH|^~\\&|||||||ACK||P|2.5\rMSA|AR||{reason}";
+            var parser = new PipeParser();
+            var parsed = parser.Parse(mshOnly);
+
+            if (parsed is not IMessage inbound)
+                return BuildFallbackNack(options, encoding, reason);
+
+            var inboundTerser = new Terser(inbound);
+            var messageControlId = inboundTerser.Get("/MSH-10");
+
+            var nackMessage = $"MSH|^~\\&|{inboundTerser.Get("/MSH-5")}|{inboundTerser.Get("/MSH-6")}|{inboundTerser.Get("/MSH-3")}|{inboundTerser.Get("/MSH-4")}|{DateTime.UtcNow:yyyyMMddHHmmss}||ACK|{Guid.NewGuid():N}|P|{inboundTerser.Get("/MSH-12")}\rMSA|AE|{messageControlId}|{reason}";
+
+            return WrapWithMllpFraming(nackMessage, options, encoding);
+        }
+        catch
+        {
+            return BuildFallbackNack(options, encoding, reason);
+        }
+    }
+
+    private static byte[] BuildFallbackNack(Options options, Encoding encoding, string reason)
+    {
+        var nackMessage = $"MSH|^~\\&|||||||ACK||P|2.5\rMSA|AE||{reason}";
         return WrapWithMllpFraming(nackMessage, options, encoding);
     }
 
@@ -406,8 +463,11 @@ public static class Mllp
 
         try
         {
+            var mshEnd = message.IndexOf('\r');
+            var mshOnly = mshEnd > 0 ? message[..mshEnd] : message;
+
             var parser = new PipeParser();
-            var parsed = parser.Parse(message);
+            var parsed = parser.Parse(mshOnly);
 
             if (parsed is not IMessage inbound)
                 return string.Empty;
@@ -427,14 +487,10 @@ public static class Mllp
             var ackTerser = new Terser(ack);
 
             if (!string.IsNullOrEmpty(connection.AckReceiverApplication))
-            {
                 ackTerser.Set("/MSH-5", connection.AckReceiverApplication);
-            }
 
             if (!string.IsNullOrEmpty(connection.AckHl7Version))
-            {
                 ackTerser.Set("/MSH-12", connection.AckHl7Version);
-            }
 
             return parser.Encode(ack);
         }

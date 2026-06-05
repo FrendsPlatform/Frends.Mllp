@@ -1261,8 +1261,7 @@ public class FunctionalTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Is.Empty);
-        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x15, 0x1c, 0x0d }),
-            "Should send NACK (0x15) for rejected message");
+        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x15, 0x1c, 0x0d }), "Should send NACK (0x15) for rejected message");
     }
 
     [Test]
@@ -1299,9 +1298,8 @@ public class FunctionalTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Output, Is.Empty);
-        Assert.That(ackMessage, Does.Contain("MSA|AR"));
-        Assert.That(ackMessage, Does.Contain("Message too large"),
-            "NACK should contain error description in MSA-3");
+        Assert.That(ackMessage, Does.Contain("MSA|AE"));
+        Assert.That(ackMessage, Does.Contain("Message too large"), "NACK should contain error description in MSA-3");
     }
 
     [Test]
@@ -1338,8 +1336,7 @@ public class FunctionalTests
         var ackMessage = parser.Parse(ack);
         var terser = new Terser(ackMessage);
 
-        Assert.That(terser.Get("/MSH-3"), Is.EqualTo("CUSTOM_ACK_SENDER"),
-            "ACK should use configured sender application");
+        Assert.That(terser.Get("/MSH-3"), Is.EqualTo("CUSTOM_ACK_SENDER"), "ACK should use configured sender application");
     }
 
     [Test]
@@ -1376,8 +1373,7 @@ public class FunctionalTests
         var ackMessage = parser.Parse(ack);
         var terser = new Terser(ackMessage);
 
-        Assert.That(terser.Get("/MSH-5"), Is.EqualTo("CUSTOM_ACK_RECEIVER"),
-            "ACK should use configured receiver application");
+        Assert.That(terser.Get("/MSH-5"), Is.EqualTo("CUSTOM_ACK_RECEIVER"), "ACK should use configured receiver application");
     }
 
     [Test]
@@ -1414,8 +1410,7 @@ public class FunctionalTests
         var ackMessage = parser.Parse(ack);
         var terser = new Terser(ackMessage);
 
-        Assert.That(terser.Get("/MSH-12"), Is.EqualTo("2.3.1"),
-            "ACK should use configured HL7 version");
+        Assert.That(terser.Get("/MSH-12"), Is.EqualTo("2.3.1"), "ACK should use configured HL7 version");
     }
 
     [Test]
@@ -1452,8 +1447,7 @@ public class FunctionalTests
         var ackMessage = parser.Parse(ack);
         var terser = new Terser(ackMessage);
 
-        Assert.That(terser.Get("/MSA-1"), Is.EqualTo("AE"),
-            "ACK should use configured type AE (Application Error)");
+        Assert.That(terser.Get("/MSA-1"), Is.EqualTo("AE"), "ACK should use configured type AE (Application Error)");
     }
 
     [Test]
@@ -1503,7 +1497,130 @@ public class FunctionalTests
         var ackBytes = await ackTask;
 
         Assert.That(result.Success, Is.True);
-        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x06, 0x1c }),
-            "ACK should not include CR when CarriageReturnRequired = false");
+        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x06, 0x1c }), "ACK should not include CR when CarriageReturnRequired = false");
+    }
+
+    [Test]
+    public async Task ShouldWriteMessagesToFileWhenEnabled()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}");
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            SendAcknowledgement = false,
+        };
+        var options = new Options
+        {
+            WriteMessagesToFile = true,
+            TempDirectory = tempDir,
+        };
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await Helpers.SendMessageAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|20250101||ADT^A01|MSG001|P|2.5");
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(File.Exists(result.Output[0]), Is.True, "Output should be a valid file path");
+
+        var content = await File.ReadAllTextAsync(result.Output[0]);
+        Assert.That(content, Does.StartWith("MSH|"));
+
+        Directory.Delete(tempDir, recursive: true);
+    }
+
+    [Test]
+    public async Task ShouldWriteMultipleMessagesToSeparateFiles()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}");
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            SendAcknowledgement = false,
+        };
+        var options = new Options
+        {
+            WriteMessagesToFile = true,
+            TempDirectory = tempDir,
+        };
+
+        var senders = Enumerable.Range(0, 3).Select(i => Task.Run(async () =>
+        {
+            await Task.Delay(100 + (i * 100));
+            await Helpers.SendMessageAsync(
+                port,
+                $"MSH|^~\\&|HIS|RIH|EKG|EKG|20250101||ADT^A01|MSG00{i}|P|2.5");
+        })).ToArray();
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await Task.WhenAll(senders);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(3));
+        Assert.That(result.Output, Is.Unique, "Each message should have a separate file");
+        Assert.That(result.Output.All(File.Exists), Is.True, "All output paths should exist");
+
+        Directory.Delete(tempDir, recursive: true);
+    }
+
+    [Test]
+    public async Task ShouldSendNackWhenMessageProcessingFails()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+        };
+        var options = new Options
+        {
+            WriteMessagesToFile = true,
+            TempDirectory = "/invalid/path/that/does/not/exist/\0",
+            AcknowledgementFormat = AcknowledgementFormat.ControlByte,
+        };
+
+        var ackTask = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            return await Helpers.SendMessageAndReadAcknowledgementBytesAsync(
+                port,
+                "MSH|^~\\&|HIS|RIH|EKG|EKG|20250101||ADT^A01|MSG001|P|2.5",
+                0x0b,
+                0x1c,
+                0x0d);
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        var ackBytes = await ackTask;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Is.Empty);
+        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x15, 0x1c, 0x0d }));
     }
 }
