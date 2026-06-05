@@ -418,11 +418,14 @@ public static class Mllp
                 return BuildFallbackNack(options, encoding, reason);
 
             var inboundTerser = new Terser(inbound);
-            var messageControlId = inboundTerser.Get("/MSH-10");
 
-            var nackMessage = $"MSH|^~\\&|{inboundTerser.Get("/MSH-5")}|{inboundTerser.Get("/MSH-6")}|{inboundTerser.Get("/MSH-3")}|{inboundTerser.Get("/MSH-4")}|{DateTime.UtcNow:yyyyMMddHHmmss}||ACK|{Guid.NewGuid():N}|P|{inboundTerser.Get("/MSH-12")}\rMSA|AE|{messageControlId}|{reason}";
+            var nack = inbound.GenerateAck(AckTypes.AE, inboundTerser.Get("/MSH-5"), inboundTerser.Get("/MSH-6"), string.Empty);
+            var nackTerser = new Terser(nack);
 
-            return WrapWithMllpFraming(nackMessage, options, encoding);
+            if (!string.IsNullOrEmpty(reason))
+                nackTerser.Set("/MSA-3", reason);
+
+            return WrapWithMllpFraming(parser.Encode(nack), options, encoding);
         }
         catch
         {
