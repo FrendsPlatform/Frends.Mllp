@@ -103,7 +103,7 @@ internal sealed class MessageLogger : IDisposable
 
         const int maxLength = 200;
         var preview = message.Length > maxLength
-            ? message.Substring(0, maxLength) + "..."
+            ? string.Concat(message.AsSpan(0, maxLength), "...")
             : message;
 
         return preview.Replace("\r", "\\r").Replace("\n", "\\n");
