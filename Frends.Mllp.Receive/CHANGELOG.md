@@ -4,7 +4,7 @@
 
 ### Added
 
-- `WriteMessagesToFile` and `TempDirectory` options to handle streaming messages to temp files instead of memory — Output returns file paths. Users are responsible for managing temp files.
+- `WriteMessagesToFile` and `TempDirectory` options to handle streaming messages to temp files instead of memory - Output returns file paths. Users are responsible for managing temp files.
 - `MaxConcurrentConnections` option to limit simultaneous connections — excess connections are rejected and logged.
 - `MaxMessageSize` option to reject oversized messages with a NACK.
 - `EnableLogging`, `LogFilePath` and `LogMessageContent` options to log message events to a file.
