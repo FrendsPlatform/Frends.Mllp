@@ -439,7 +439,7 @@ public static class Mllp
         try
         {
             // HL7 segments are separated by \r — extract only the MSH segment (first line)
-            var firstSegmentEnd = message.IndexOfAny(new[] { '\r', '\n' });
+            var firstSegmentEnd = message.IndexOfAny(['\r', '\n']);
             var mshSegment = firstSegmentEnd > 0 ? message[..firstSegmentEnd] : message;
 
             var parser = new PipeParser();
