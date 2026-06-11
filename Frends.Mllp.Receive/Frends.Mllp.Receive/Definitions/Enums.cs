@@ -67,3 +67,18 @@ public enum AcknowledgementFormat
     /// </summary>
     ControlByte,
 }
+
+/// <summary>
+/// Acknowledgement types for HL7 ACK messages, indicating the result of message processing.
+/// </summary>
+public enum AcknowledgementType
+{
+    /// <summary>Application Accept</summary>
+    AA,
+
+    /// <summary>Application Error</summary>
+    AE,
+
+    /// <summary>Application Reject</summary>
+    AR,
+}

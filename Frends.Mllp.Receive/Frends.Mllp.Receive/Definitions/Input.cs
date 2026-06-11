@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Frends.Mllp.Receive.Helpers;
 
 namespace Frends.Mllp.Receive.Definitions;
 
@@ -14,6 +15,7 @@ public class Input
     /// <example>127.0.0.1</example>
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
+    [ValidIpAddress]
     public string ListenAddress { get; set; } = string.Empty;
 
     /// <summary>
@@ -21,5 +23,6 @@ public class Input
     /// </summary>
     /// <example>2575</example>
     [DefaultValue(2575)]
+    [Range(1, 65535, ErrorMessage = "Port must be between 1 and 65535.")]
     public int Port { get; set; } = 2575;
 }

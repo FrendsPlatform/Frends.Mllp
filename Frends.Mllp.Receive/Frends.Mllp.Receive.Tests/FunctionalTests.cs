@@ -1426,7 +1426,7 @@ public class FunctionalTests
         {
             ListenDurationSeconds = 5,
             BufferSize = 1024,
-            AcknowledgementType = "AE", // Application Error
+            AcknowledgementType = AcknowledgementType.AE, // Application Error
         };
         var options = new Options();
 
@@ -1487,7 +1487,6 @@ public class FunctionalTests
             await stream.WriteAsync(msgBytes, 0, msgBytes.Length);
             await stream.FlushAsync();
 
-            // Read ACK
             var ackBuffer = new byte[10];
             var read = await stream.ReadAsync(ackBuffer, 0, ackBuffer.Length);
             return ackBuffer[..read];
@@ -1498,6 +1497,82 @@ public class FunctionalTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x06, 0x1c }), "ACK should not include CR when CarriageReturnRequired = false");
+    }
+
+    [Test]
+    public async Task ShouldGenerateAckFromMultiSegmentMessageUsingOnlyMsh()
+    {
+        var port = Helpers.GetAvailablePort();
+        var input = new Input
+        {
+            ListenAddress = IPAddress.Loopback.ToString(),
+            Port = port,
+        };
+        var connection = new Connection
+        {
+            ListenDurationSeconds = 5,
+            BufferSize = 1024,
+            SendAcknowledgement = true,
+            AcknowledgementType = 0,
+        };
+        var options = new Options
+        {
+            StartBlockByte = 0x0b,
+            EndBlockByte = 0x1c,
+            CarriageReturnByte = 0x0d,
+            CarriageReturnRequired = true,
+        };
+
+        var rawHl7Message =
+            "MSH|^~\\&|HIS|RIH|EKG|EKG|20260611||ADT^A01|MSG00002|P|2.5\r" +
+            "EVN|A01|202606111100\r" +
+            "PID|||12345^^^MRN||Kowalski|Jan||19800101|M\r" +
+            "PV1||I|Internal Medicine||||||||||||||||1001";
+
+        string receivedAck = null;
+
+        var sender = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            var messageBytes = Encoding.UTF8.GetBytes(rawHl7Message);
+            var framed = new byte[messageBytes.Length + 3];
+            framed[0] = options.StartBlockByte;
+            Buffer.BlockCopy(messageBytes, 0, framed, 1, messageBytes.Length);
+            framed[^2] = options.EndBlockByte;
+            framed[^1] = options.CarriageReturnByte;
+
+            await stream.WriteAsync(framed, 0, framed.Length);
+            await stream.FlushAsync();
+
+            var buffer = new byte[2048];
+            var readBytes = await stream.ReadAsync(buffer, 0, buffer.Length);
+
+            if (readBytes > 0)
+            {
+                var rawResponse = Encoding.UTF8.GetString(buffer, 0, readBytes);
+                var startIdx = rawResponse.IndexOf((char)options.StartBlockByte);
+                var endIdx = rawResponse.IndexOf((char)options.EndBlockByte);
+
+                if (startIdx >= 0 && endIdx > startIdx)
+                {
+                    receivedAck = rawResponse.Substring(startIdx + 1, endIdx - startIdx - 1);
+                }
+            }
+        });
+
+        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
+        await sender;
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output, Has.Length.EqualTo(1));
+        Assert.That(receivedAck, Is.Not.Null, "The server failed to return an ACK response.");
+        Assert.That(receivedAck, Does.Contain("MSA|AA|MSG00002"));
+        Assert.That(receivedAck, Does.StartWith("MSH|^~\\&"));
     }
 
     [Test]
@@ -1519,7 +1594,7 @@ public class FunctionalTests
         var options = new Options
         {
             WriteMessagesToFile = true,
-            TempDirectory = tempDir,
+            MessageOutputDirectory = tempDir,
         };
 
         var sender = Task.Run(async () =>
@@ -1562,7 +1637,7 @@ public class FunctionalTests
         var options = new Options
         {
             WriteMessagesToFile = true,
-            TempDirectory = tempDir,
+            MessageOutputDirectory = tempDir,
         };
 
         var senders = Enumerable.Range(0, 3).Select(i => Task.Run(async () =>
@@ -1585,42 +1660,80 @@ public class FunctionalTests
     }
 
     [Test]
-    public async Task ShouldSendNackWhenMessageProcessingFails()
+    public async Task ShouldHandleMultipleLargeMessagesWrittenToFile()
     {
-        var port = Helpers.GetAvailablePort();
-        var input = new Input
-        {
-            ListenAddress = IPAddress.Loopback.ToString(),
-            Port = port,
-        };
-        var connection = new Connection
-        {
-            ListenDurationSeconds = 5,
-            BufferSize = 1024,
-        };
-        var options = new Options
-        {
-            WriteMessagesToFile = true,
-            TempDirectory = "/invalid/path/that/does/not/exist/\0",
-            AcknowledgementFormat = AcknowledgementFormat.ControlByte,
-        };
+        var tempDir = Path.Combine(Path.GetTempPath(), $"mllp-test-{Guid.NewGuid()}");
+        var (result, memoryUsedMB) = await RunLargeMessageTest(Helpers.GetAvailablePort(), writeToFile: true, tempDir);
 
-        var ackTask = Task.Run(async () =>
-        {
-            await Task.Delay(100);
-            return await Helpers.SendMessageAndReadAcknowledgementBytesAsync(
-                port,
-                "MSH|^~\\&|HIS|RIH|EKG|EKG|20250101||ADT^A01|MSG001|P|2.5",
-                0x0b,
-                0x1c,
-                0x0d);
-        });
-
-        var result = await Mllp.Receive(input, connection, options, CancellationToken.None);
-        var ackBytes = await ackTask;
+        TestContext.WriteLine($"Memory delta (file mode): {memoryUsedMB:F2} MB");
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Output, Is.Empty);
-        Assert.That(ackBytes, Is.EqualTo(new byte[] { 0x0b, 0x15, 0x1c, 0x0d }));
+        Assert.That(result.Output.Length, Is.EqualTo(3));
+        Assert.That(result.Output.All(File.Exists), Is.True);
+        Assert.That(result.Output.All(p => new FileInfo(p).Length > 50 * 1024 * 1024), Is.True);
+
+        Directory.Delete(tempDir, recursive: true);
+    }
+
+    [Test]
+    public async Task ShouldHandleMultipleLargeMessagesInMemory()
+    {
+        var (result, memoryUsedMB) = await RunLargeMessageTest(Helpers.GetAvailablePort(), writeToFile: false);
+
+        TestContext.WriteLine($"Memory delta (memory mode): {memoryUsedMB:F2} MB");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Output.Length, Is.EqualTo(3));
+        Assert.That(result.Output.All(m => m.StartsWith("MSH|")), Is.True);
+        Assert.That(result.Output.All(m => m.Length > 50 * 1024 * 1024), Is.True);
+    }
+
+    private static async Task<(Result result, double memoryUsedMB)> RunLargeMessageTest(
+        int port,
+        bool writeToFile,
+        string tempDir = null)
+    {
+        var largePayload = "MSH|^~\\&|HIS|RIH|EKG|EKG|20250101||ADT^A01|MSG001|P|2.5\r" + new string('X', 50 * 1024 * 1024);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var memoryBefore = Process.GetCurrentProcess().PrivateMemorySize64;
+
+        var serverTask = Mllp.Receive(
+            new Input { ListenAddress = IPAddress.Loopback.ToString(), Port = port },
+            new Connection { ListenDurationSeconds = 90, BufferSize = 256 * 1024, SendAcknowledgement = false },
+            new Options { WriteMessagesToFile = writeToFile, MessageOutputDirectory = tempDir ?? string.Empty },
+            CancellationToken.None);
+
+        await Task.Delay(500);
+
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(i => Task.Run(async () =>
+        {
+            await Task.Delay(100 + (i * 500));
+            using var client = new TcpClient { SendTimeout = 120000, ReceiveTimeout = 120000 };
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+
+            var messageBytes = Encoding.UTF8.GetBytes(largePayload);
+            var framed = new byte[messageBytes.Length + 3];
+            framed[0] = 0x0b;
+            Buffer.BlockCopy(messageBytes, 0, framed, 1, messageBytes.Length);
+            framed[^2] = 0x1c;
+            framed[^1] = 0x0d;
+
+            await stream.WriteAsync(framed, 0, framed.Length);
+            await stream.FlushAsync();
+            await Task.Delay(2000);
+        })));
+
+        var result = await serverTask;
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var memoryUsedMB = (Process.GetCurrentProcess().PrivateMemorySize64 - memoryBefore) / (1024.0 * 1024.0);
+
+        return (result, memoryUsedMB);
     }
 }

@@ -22,12 +22,12 @@ internal sealed class MessageLogger : IDisposable
         if (!enabled)
             return;
 
+        var path = string.IsNullOrWhiteSpace(logFilePath)
+            ? Path.Combine(Path.GetTempPath(), $"frends-mllp-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log")
+            : logFilePath;
+
         try
         {
-            var path = string.IsNullOrWhiteSpace(logFilePath)
-                ? Path.Combine(Path.GetTempPath(), $"frends-mllp-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log")
-                : logFilePath;
-
             var directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
@@ -39,9 +39,10 @@ internal sealed class MessageLogger : IDisposable
             writer.WriteLine("=".PadRight(80, '='));
             writer.WriteLine();
         }
-        catch
+        catch (Exception ex)
         {
             enabled = false;
+            System.Diagnostics.Trace.TraceWarning($"[MessageLogger] Failed to initialize log file '{path}': {ex.Message}. Logging disabled.");
         }
     }
 
@@ -145,9 +146,10 @@ internal sealed class MessageLogger : IDisposable
 
                 writer.WriteLine();
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore
+                System.Diagnostics.Trace.TraceWarning(
+                    $"[MessageLogger] Failed to write log entry: {ex.Message}");
             }
         }
     }

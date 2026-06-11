@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Frends.Mllp.Receive.Helpers;
 
 namespace Frends.Mllp.Receive.Definitions;
 
@@ -41,6 +42,7 @@ public class Options
     /// </summary>
     /// <example>10</example>
     [DefaultValue(0)]
+    [Range(0, int.MaxValue, ErrorMessage = "MaxConcurrentConnections cannot be negative.")]
     public int MaxConcurrentConnections { get; set; } = 0;
 
     /// <summary>
@@ -48,6 +50,7 @@ public class Options
     /// </summary>
     /// <example>1048576</example>
     [DefaultValue(0)]
+    [Range(0, int.MaxValue, ErrorMessage = "MaxMessageSize cannot be negative.")]
     public int MaxMessageSize { get; set; } = 0;
 
     /// <summary>
@@ -78,6 +81,7 @@ public class Options
     /// <example>C:\Logs\mllp-messages.log</example>
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
+    [RequiredIf(nameof(EnableLogging), true, ErrorMessage = "LogFilePath is required when logging is enabled.")]
     [UIHint(nameof(EnableLogging), "", true)]
     public string LogFilePath { get; set; } = string.Empty;
 
@@ -90,8 +94,11 @@ public class Options
     public bool LogMessageContent { get; set; } = false;
 
     /// <summary>
-    /// When enabled, received messages are written to temp files instead of returned as strings.
-    /// Output will contain file paths instead of message content.
+    /// When enabled, messages are written directly to temp files during receive,
+    /// reducing memory usage.
+    /// Note: uses synchronous file I/O which may impact
+    /// throughput under high load. Output contains file paths instead of message content.
+    /// Users are responsible for managing and deleting files.
     /// </summary>
     /// <example>false</example>
     [DefaultValue(false)]
@@ -105,7 +112,7 @@ public class Options
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     [UIHint(nameof(WriteMessagesToFile), "", true)]
-    public string TempDirectory { get; set; } = string.Empty;
+    public string MessageOutputDirectory { get; set; } = string.Empty;
 
     /// <summary>
     /// Whether to throw an error on failure.

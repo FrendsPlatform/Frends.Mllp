@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Frends.Mllp.Receive.Helpers;
 
 namespace Frends.Mllp.Receive.Definitions;
 
@@ -36,6 +37,7 @@ public class Connection
     /// </summary>
     /// <example>30</example>
     [DefaultValue(30)]
+    [Range(1, int.MaxValue, ErrorMessage = "Listen duration must be greater than zero.")]
     public int ListenDurationSeconds { get; set; } = 30;
 
     /// <summary>
@@ -43,6 +45,7 @@ public class Connection
     /// </summary>
     /// <example>8192</example>
     [DefaultValue(8192)]
+    [Range(1, int.MaxValue, ErrorMessage = "Buffer size must be positive.")]
     public int BufferSize { get; set; } = 8192;
 
     /// <summary>
@@ -57,8 +60,8 @@ public class Connection
     /// </summary>
     /// <example>AA</example>
     [DisplayFormat(DataFormatString = "Text")]
-    [DefaultValue("AA")]
-    public string AcknowledgementType { get; set; } = "AA";
+    [DefaultValue(AcknowledgementType.AA)]
+    public AcknowledgementType AcknowledgementType { get; set; } = AcknowledgementType.AA;
 
     /// <summary>
     /// Sender application name (MSH-3) used in the generated ACK message.
@@ -117,6 +120,7 @@ public class Connection
     /// </summary>
     /// <example>iso-8859-1</example>
     [UIHint(nameof(FileEncoding), "", FileEncoding.Other)]
+    [RequiredIf(nameof(Encoding), FileEncoding.Other, ErrorMessage = "EncodingInString must not be empty when Encoding is set to Other.")]
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
     public string EncodingInString { get; set; } = string.Empty;

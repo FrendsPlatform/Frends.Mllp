@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace Frends.Mllp.Receive.Helpers;
 
 /// <summary>
@@ -7,36 +5,39 @@ namespace Frends.Mllp.Receive.Helpers;
 /// </summary>
 internal sealed class ConnectionTracker
 {
+    private readonly object syncLock = new();
     private readonly int maxConnections;
     private int activeConnections;
 
     public ConnectionTracker(int maxConnections)
     {
         this.maxConnections = maxConnections;
-        activeConnections = 0;
     }
-
-    internal int ActiveConnections => activeConnections;
 
     internal bool TryIncrementConnection()
     {
         if (maxConnections <= 0)
             return true;
 
-        var current = Interlocked.Increment(ref activeConnections);
-
-        if (current > maxConnections)
+        lock (syncLock)
         {
-            Interlocked.Decrement(ref activeConnections);
-            return false;
-        }
+            if (activeConnections >= maxConnections)
+                return false;
 
-        return true;
+            activeConnections++;
+            return true;
+        }
     }
 
     internal void DecrementConnection()
     {
-        if (maxConnections > 0)
-            Interlocked.Decrement(ref activeConnections);
+        if (maxConnections <= 0)
+            return;
+
+        lock (syncLock)
+        {
+            if (activeConnections > 0)
+                activeConnections--;
+        }
     }
 }
