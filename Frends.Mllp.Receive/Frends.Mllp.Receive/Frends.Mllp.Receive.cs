@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
@@ -45,14 +46,19 @@ public static class Mllp
         CancellationToken cancellationToken)
     {
         X509Certificate2 serverCert = null;
+        MessageLogger logger = null;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateParameters(input, connection);
+            ValidationHandler.Run(input, connection, options);
 
             var messages = new ConcurrentQueue<string>();
+            var messageFiles = new ConcurrentQueue<string>();
             var encoding = GetEncoding(connection);
+
+            logger = new MessageLogger(options.EnableLogging, options.LogFilePath, options.LogMessageContent);
+            var connectionTracker = new ConnectionTracker(options.MaxConcurrentConnections);
 
             if (connection.TlsMode == TlsMode.Mtls)
             {
@@ -61,7 +67,7 @@ public static class Mllp
                 serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
             }
 
-            using var host = BuildMllpHost(input, connection, options, encoding, messages, serverCert);
+            using var host = BuildMllpHost(input, connection, options, encoding, messages, messageFiles, logger, connectionTracker, serverCert);
 
             await host.StartAsync(cancellationToken);
 
@@ -84,7 +90,9 @@ public static class Mllp
             return new Result
             {
                 Success = true,
-                Output = messages.ToArray(),
+                Output = options.WriteMessagesToFile
+                    ? messageFiles.ToArray()
+                    : messages.ToArray(),
                 Error = null,
             };
         }
@@ -94,29 +102,9 @@ public static class Mllp
         }
         finally
         {
+            logger?.Dispose();
             serverCert?.Dispose();
         }
-    }
-
-    private static void ValidateParameters(Input input, Connection connection)
-    {
-        if (input.Port is <= 0 or > 65535)
-            throw new ArgumentOutOfRangeException(nameof(input), "Port must be between 1 and 65535.");
-
-        if (connection.ListenDurationSeconds <= 0)
-            throw new ArgumentOutOfRangeException(nameof(connection), "Listen duration must be greater than zero.");
-
-        if (connection.BufferSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(connection), "Buffer size must be positive.");
-
-        if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
-        {
-            throw new ArgumentException(
-                "EncodingInString must not be null or empty when MessageEncoding is set to Other.", nameof(connection));
-        }
-
-        if (!string.IsNullOrWhiteSpace(input.ListenAddress) && !IPAddress.TryParse(input.ListenAddress, out _))
-            throw new FormatException("Invalid ListenAddress. Provide a valid IP address or leave the field empty.");
     }
 
     private static Encoding GetEncoding(Connection connection)
@@ -146,6 +134,9 @@ public static class Mllp
         Options options,
         Encoding encoding,
         ConcurrentQueue<string> messages,
+        ConcurrentQueue<string> messageFiles,
+        MessageLogger logger,
+        ConnectionTracker connectionTracker,
         X509Certificate2 serverCert)
     {
         var listenIp = string.IsNullOrWhiteSpace(input.ListenAddress) ? "Any" : input.ListenAddress;
@@ -159,34 +150,141 @@ public static class Mllp
                     StartBlock = options.StartBlockByte,
                     EndBlock = options.EndBlockByte,
                     CarriageReturn = options.CarriageReturnByte,
+                    CarriageReturnRequired = options.CarriageReturnRequired,
                 });
+                services.AddSingleton(options);
+                services.AddSingleton(logger);
+                services.AddSingleton(connectionTracker);
+            })
+            .UseSessionHandler(async (session) =>
+            {
+                var sessionId = session.SessionID;
+
+                // Check connection limit
+                if (!connectionTracker.TryIncrementConnection())
+                {
+                    logger.LogConnectionRejected(sessionId, $"Max concurrent connections limit ({options.MaxConcurrentConnections}) reached");
+                    await session.CloseAsync(SuperSocket.Connection.CloseReason.ServerShutdown);
+                    return;
+                }
+
+                // Handle connection closed
+                session.Closed += (s, e) =>
+                {
+                    connectionTracker.DecrementConnection();
+                    if (e.Reason != SuperSocket.Connection.CloseReason.LocalClosing)
+                    {
+                        logger.LogConnectionDropped(sessionId, e.Reason.ToString());
+                    }
+
+                    return ValueTask.CompletedTask;
+                };
+
+                return;
             })
             .UsePackageHandler(async (session, package) =>
             {
-                messages.Enqueue(package.Payload);
+                var sessionId = session.SessionID;
 
-                if (!connection.SendAcknowledgement)
-                    return;
-
-                var ackBytes = BuildAcknowledgementBytes(package.Payload, connection, options, encoding);
-                if (ackBytes.Length == 0)
+                // Handle framing errors
+                if (package.HasFramingError)
                 {
+                    logger.LogFramingError(sessionId, package.FramingError);
+                    return;
+                }
+
+                // Check message size limit
+                if (options.MaxMessageSize > 0 && package.PayloadSize > options.MaxMessageSize)
+                {
+                    logger.LogMessageRejected(sessionId, $"Message size ({package.PayloadSize} bytes) exceeds limit ({options.MaxMessageSize} bytes)", package.PayloadSize);
+
+                    if (connection.SendAcknowledgement)
+                    {
+                        var nackBytes = BuildNegativeAcknowledgement(package.Payload, options, encoding, "Message too large");
+                        try
+                        {
+                            await session.SendAsync(nackBytes);
+                        }
+                        catch
+                        {
+                            // Ignore send failures
+                        }
+                    }
+
                     return;
                 }
 
                 try
                 {
-                    await session.SendAsync(ackBytes);
+                    logger.LogMessageReceived(package.Payload, sessionId);
+
+                    if (package.IsFilePath)
+                    {
+                        messageFiles.Enqueue(package.Payload);
+                    }
+                    else
+                    {
+                        messages.Enqueue(package.Payload);
+                    }
+
+                    if (!connection.SendAcknowledgement)
+                    {
+                        logger.LogMessageSuccess(package.Payload, sessionId, false, "ACK disabled in configuration");
+                        return;
+                    }
+
+                    var mshForAck = package.IsFilePath
+                        ? ReadMshFromFile(package.Payload, encoding)
+                        : package.Payload;
+
+                    var ackBytes = BuildAcknowledgementBytes(mshForAck, connection, options, encoding);
+                    if (ackBytes.Length == 0)
+                    {
+                        logger.LogMessageSuccess(package.Payload, sessionId, false, "ACK could not be built (invalid message format)");
+                        return;
+                    }
+
+                    try
+                    {
+                        await session.SendAsync(ackBytes);
+                        logger.LogMessageSuccess(package.Payload, sessionId, true, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogAcknowledgementFailure(sessionId, ex);
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Client may close the connection before the ACK is sent. Ignore send failures.
+                    logger.LogMessageFailure(package.Payload, sessionId, ex);
+                    if (connection.SendAcknowledgement)
+                    {
+                        var mshForAck = package.IsFilePath
+                            ? ReadMshFromFile(package.Payload, encoding)
+                            : package.Payload;
+
+                        var nackBytes = BuildNegativeAcknowledgement(mshForAck, options, encoding, ex.Message);
+                        try
+                        {
+                            await session.SendAsync(nackBytes);
+                        }
+                        catch
+                        {
+                            logger.LogAcknowledgementFailure(sessionId, ex);
+                        }
+                    }
                 }
             })
             .ConfigureSuperSocket(opt =>
             {
                 opt.Name = "FrendsMllpServer";
+
                 opt.ReceiveBufferSize = connection.BufferSize;
+
+                opt.MaxPackageLength = options.MaxMessageSize > 0
+                    ? options.MaxMessageSize + 1024
+                    : 100 * 1024 * 1024;
+
                 var listener = new ListenOptions
                 {
                     Ip = listenIp,
@@ -231,13 +329,7 @@ public static class Mllp
     {
         if (options.AcknowledgementFormat == AcknowledgementFormat.ControlByte)
         {
-            return
-            [
-                options.StartBlockByte,
-                options.AcknowledgementByte,
-                options.EndBlockByte,
-                options.CarriageReturnByte,
-            ];
+            return BuildControlByteAck(options, encoding);
         }
 
         var ackPayload = BuildAcknowledgement(message, connection);
@@ -246,10 +338,92 @@ public static class Mllp
             return [];
         }
 
-        var ackMessage =
-            $"{(char)options.StartBlockByte}{ackPayload}{(char)options.EndBlockByte}{(char)options.CarriageReturnByte}";
+        return WrapWithMllpFraming(ackPayload, options, encoding);
+    }
 
-        return encoding.GetBytes(ackMessage);
+    private static byte[] BuildControlByteAck(Options options, Encoding encoding)
+    {
+        if (options.CarriageReturnRequired)
+        {
+            return
+            [
+                options.StartBlockByte,
+                options.AcknowledgementByte,
+                options.EndBlockByte,
+                options.CarriageReturnByte,
+            ];
+        }
+        else
+        {
+            return
+            [
+                options.StartBlockByte,
+                options.AcknowledgementByte,
+                options.EndBlockByte,
+            ];
+        }
+    }
+
+    private static byte[] BuildNegativeAcknowledgement(
+    string message,
+    Options options,
+    Encoding encoding,
+    string reason)
+    {
+        if (options.AcknowledgementFormat == AcknowledgementFormat.ControlByte)
+        {
+            if (options.CarriageReturnRequired)
+                return [options.StartBlockByte, 0x15, options.EndBlockByte, options.CarriageReturnByte];
+            else
+                return [options.StartBlockByte, 0x15, options.EndBlockByte];
+        }
+
+        try
+        {
+            var mshEnd = message?.IndexOf('\r') ?? -1;
+            var mshOnly = mshEnd > 0 ? message[..mshEnd] : message;
+
+            var parser = new PipeParser();
+            var parsed = parser.Parse(mshOnly);
+
+            if (parsed is not IMessage inbound)
+                return BuildFallbackNack(options, encoding, reason);
+
+            var inboundTerser = new Terser(inbound);
+
+            var nack = inbound.GenerateAck(AckTypes.AE, inboundTerser.Get("/MSH-5"), inboundTerser.Get("/MSH-6"), string.Empty);
+            var nackTerser = new Terser(nack);
+
+            if (!string.IsNullOrEmpty(reason))
+                nackTerser.Set("/MSA-3", reason);
+
+            return WrapWithMllpFraming(parser.Encode(nack), options, encoding);
+        }
+        catch
+        {
+            return BuildFallbackNack(options, encoding, reason);
+        }
+    }
+
+    private static byte[] BuildFallbackNack(Options options, Encoding encoding, string reason)
+    {
+        var nackMessage = $"MSH|^~\\&|||||||ACK||P|2.5\rMSA|AE||{reason}";
+        return WrapWithMllpFraming(nackMessage, options, encoding);
+    }
+
+    private static byte[] WrapWithMllpFraming(string payload, Options options, Encoding encoding)
+    {
+        string framedMessage;
+        if (options.CarriageReturnRequired)
+        {
+            framedMessage = $"{(char)options.StartBlockByte}{payload}{(char)options.EndBlockByte}{(char)options.CarriageReturnByte}";
+        }
+        else
+        {
+            framedMessage = $"{(char)options.StartBlockByte}{payload}{(char)options.EndBlockByte}";
+        }
+
+        return encoding.GetBytes(framedMessage);
     }
 
     private static string Normalize(string value) =>
@@ -264,19 +438,33 @@ public static class Mllp
 
         try
         {
+            // HL7 segments are separated by \r — extract only the MSH segment (first line)
+            var firstSegmentEnd = message.IndexOfAny(['\r', '\n']);
+            var mshSegment = firstSegmentEnd > 0 ? message[..firstSegmentEnd] : message;
+
             var parser = new PipeParser();
-            var parsed = parser.Parse(message);
+            var parsed = parser.Parse(mshSegment);
 
             if (parsed is not IMessage inbound)
                 return string.Empty;
 
             var inboundTerser = new Terser(inbound);
-            var ackType = Enum.TryParse(connection.AcknowledgementMessage, true, out AckTypes parsedAck)
-                ? parsedAck
-                : AckTypes.AA;
-            var ackApp = inboundTerser.Get("/MSH-5");
+            var ackType = (AckTypes)connection.AcknowledgementType;
+
+            var ackApp = !string.IsNullOrEmpty(connection.AckSenderApplication)
+                ? connection.AckSenderApplication
+                : inboundTerser.Get("/MSH-5");
+
             var ackFacility = inboundTerser.Get("/MSH-6");
+
             var ack = inbound.GenerateAck(ackType, ackApp, ackFacility, string.Empty);
+            var ackTerser = new Terser(ack);
+
+            if (!string.IsNullOrEmpty(connection.AckReceiverApplication))
+                ackTerser.Set("/MSH-5", connection.AckReceiverApplication);
+
+            if (!string.IsNullOrEmpty(connection.AckHl7Version))
+                ackTerser.Set("/MSH-12", connection.AckHl7Version);
 
             return parser.Encode(ack);
         }
@@ -284,6 +472,16 @@ public static class Mllp
         {
             return string.Empty;
         }
+    }
+
+    private static string ReadMshFromFile(string filePath, Encoding encoding)
+    {
+        using var file = File.OpenRead(filePath);
+        var buffer = new byte[1024];
+        var read = file.Read(buffer, 0, buffer.Length);
+        var text = encoding.GetString(buffer, 0, read);
+        var mshEnd = text.IndexOf('\r');
+        return mshEnd > 0 ? text[..mshEnd] : text;
     }
 
     /// <summary>
@@ -309,6 +507,12 @@ public static class Mllp
         /// </summary>
         /// <example>13</example>
         public byte CarriageReturn { get; init; }
+
+        /// <summary>
+        /// Indicates whether a carriage return byte is required.
+        /// </summary>
+        /// <example>true</example>
+        public bool CarriageReturnRequired { get; init; }
     }
 
     /// <summary>
@@ -317,41 +521,130 @@ public static class Mllp
     /// <example>MSH|^~\&amp;|HIS|RIH|...</example>
     private sealed class MllpPackage
     {
-        public MllpPackage(string payload) => Payload = payload;
+        public MllpPackage(string payload, int payloadSize, bool isFilePath = false)
+        {
+            Payload = payload;
+            PayloadSize = payloadSize;
+            IsFilePath = isFilePath;
+            HasFramingError = false;
+            FramingError = null;
+        }
+
+        public MllpPackage(string framingError)
+        {
+            Payload = null;
+            PayloadSize = 0;
+            IsFilePath = false;
+            HasFramingError = true;
+            FramingError = framingError;
+        }
 
         /// <summary>
-        /// Raw message content without MLLP framing.
+        /// Raw message content without MLLP framing characters.
+        /// Null if HasFramingError is true.
         /// </summary>
         /// <example>MSH|^~\&amp;|HIS|RIH|...</example>
         public string Payload { get; }
+
+        /// <summary>
+        /// Size of the payload in bytes before encoding conversion.
+        /// Zero if HasFramingError is true.
+        /// </summary>
+        /// <example>256</example>
+        public int PayloadSize { get; }
+
+        /// <summary>
+        /// Indicates whether the payload is stored in a file.
+        /// </summary>
+        /// <example>false</example>
+        public bool IsFilePath { get; }
+
+        /// <summary>
+        /// Indicates whether a framing error occurred during message parsing.
+        /// When true, Payload is null and FramingError contains error details.
+        /// </summary>
+        /// <example>false</example>
+        public bool HasFramingError { get; }
+
+        /// <summary>
+        /// Description of the framing error that occurred.
+        /// Null if HasFramingError is false. Contains details about missing start/end blocks or invalid carriage return.
+        /// </summary>
+        /// <example>Missing start block (expected 11, got 65)</example>
+        public string FramingError { get; }
     }
 
     /// <summary>
-    /// Pipeline filter that extracts MLLP-framed messages.
+    /// MLLP pipeline filter implementation with framing validation.
     /// </summary>
-    private sealed class MllpPipelineFilter : BeginEndMarkPipelineFilter<MllpPackage>
+    private sealed class MllpPipelineFilter : PipelineFilterBase<MllpPackage>
     {
         private readonly Encoding encoding;
+        private readonly MllpFramingBytes framing;
+        private readonly Options options;
 
-        public MllpPipelineFilter(Encoding encoding, MllpFramingBytes framing)
-            : base(
-                new[]
-                {
-                    framing.StartBlock,
-                },
-                new[]
-                {
-                    framing.EndBlock, framing.CarriageReturn,
-                })
+        public MllpPipelineFilter(IServiceProvider serviceProvider)
         {
-            this.encoding = encoding;
+            encoding = serviceProvider.GetRequiredService<Encoding>();
+            framing = serviceProvider.GetRequiredService<MllpFramingBytes>();
+            options = serviceProvider.GetRequiredService<Options>();
         }
 
-        protected override MllpPackage DecodePackage(ref ReadOnlySequence<byte> buffer)
+        /// <summary>
+        /// Parses the incoming byte sequence according to MLLP framing rules.
+        /// </summary>
+        public override MllpPackage Filter(ref SequenceReader<byte> reader)
         {
-            var payload = buffer.GetString(encoding);
+            if (!reader.TryRead(out byte firstByte))
+                return null;
 
-            return new MllpPackage(payload);
+            if (firstByte != framing.StartBlock)
+                return new MllpPackage($"Missing start block (expected {framing.StartBlock}, got {firstByte})");
+
+            if (!reader.TryReadTo(out ReadOnlySequence<byte> payload, framing.EndBlock))
+            {
+                reader.Rewind(reader.Consumed);
+                return null;
+            }
+
+            if (framing.CarriageReturnRequired)
+            {
+                if (!reader.TryRead(out byte crByte))
+                {
+                    reader.Rewind(reader.Consumed);
+                    return null;
+                }
+
+                if (crByte != framing.CarriageReturn)
+                    return new MllpPackage($"Missing or invalid carriage return (expected {framing.CarriageReturn}, got {crByte})");
+            }
+
+            var payloadSize = (int)payload.Length;
+
+            if (options.WriteMessagesToFile)
+            {
+                if (options.MaxMessageSize > 0 && payloadSize > options.MaxMessageSize)
+                    return new MllpPackage($"Message size {payloadSize} exceeds maximum allowed size {options.MaxMessageSize}");
+
+                var dir = string.IsNullOrWhiteSpace(options.MessageOutputDirectory)
+                    ? Path.GetTempPath()
+                    : options.MessageOutputDirectory;
+
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                var filePath = Path.Combine(dir, $"mllp-{Guid.NewGuid()}.hl7");
+
+                using var file = File.OpenWrite(filePath);
+                foreach (var segment in payload)
+                    file.Write(segment.Span);
+
+                return new MllpPackage(filePath, payloadSize, isFilePath: true);
+            }
+
+            var payloadSpan = payload.IsSingleSegment ? payload.FirstSpan : payload.ToArray();
+            var message = encoding.GetString(payloadSpan);
+            return new MllpPackage(message, payloadSize);
         }
     }
 }
