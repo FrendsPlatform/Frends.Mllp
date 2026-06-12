@@ -621,6 +621,9 @@ public static class Mllp
 
             var payloadSize = (int)payload.Length;
 
+            if (payloadSize > options.MaxMessageSize)
+                return new MllpPackage($"Message size {payloadSize} exceeds maximum allowed size {options.MaxMessageSize}");
+
             if (options.WriteMessagesToFile)
             {
                 var dir = string.IsNullOrWhiteSpace(options.MessageOutputDirectory)

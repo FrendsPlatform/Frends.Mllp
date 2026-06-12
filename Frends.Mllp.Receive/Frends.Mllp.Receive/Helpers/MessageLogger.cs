@@ -41,7 +41,7 @@ internal sealed class MessageLogger : IDisposable
         }
         catch (Exception ex)
         {
-            enabled = false;
+            this.enabled = false;
             System.Diagnostics.Trace.TraceWarning($"[MessageLogger] Failed to initialize log file '{path}': {ex.Message}. Logging disabled.");
         }
     }
