@@ -1,15 +1,17 @@
-﻿using System;
+﻿using Frends.Mllp.Send.Definitions;
+using NHapiTools.Base.Util;
+using NUnit.Framework;
+using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Runtime.Caching;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Frends.Mllp.Send.Definitions;
-using NHapiTools.Base.Util;
-using NUnit.Framework;
 
 namespace Frends.Mllp.Send.Tests;
 
@@ -40,6 +42,7 @@ public class FunctionalTests
     [SetUp]
     public void StartServer()
     {
+        ClearConnectionCache();
         _listener = new TcpListener(
             IPAddress.Loopback,
             0);
@@ -49,10 +52,17 @@ public class FunctionalTests
     }
 
     [TearDown]
-    public void StopServer()
+    public async Task StopServer()
     {
         _serverCts.Cancel();
         _listener.Stop();
+
+        if (_serverTask != null)
+        {
+            try { await _serverTask; }
+            catch { }
+        }
+
         _serverCts.Dispose();
     }
 
@@ -461,6 +471,126 @@ public class FunctionalTests
         Assert.That(receivedByServer, Does.Contain("MSG00001"));
     }
 
+    [Test]
+    public async Task ShouldReuseConnectionWhenKeepAliveEnabled()
+    {
+        var connectionCount = 0;
+        SetupServerLogicMultiMessage(
+        requireTls: false,
+        onNewConnection: () => Interlocked.Increment(ref connectionCount));
+
+        var connection = new Connection
+        {
+            Host = "127.0.0.1",
+            Port = _port,
+            TlsMode = TlsMode.None,
+            ConnectTimeoutSeconds = 5,
+        };
+        var input = new Input
+        {
+            Hl7Message = Helpers.BuildTestMessage(),
+        };
+        var options = new Options
+        {
+            ExpectAcknowledgement = true,
+            KeepConnectionAlive = true,
+            ConnectionCacheExpirationMinutes = 1,
+        };
+
+        // wysyłamy trzy razy
+        var result1 = Mllp.Send(input, connection, options, CancellationToken.None);
+        var result2 = Mllp.Send(input, connection, options, CancellationToken.None);
+        var result3 = Mllp.Send(input, connection, options, CancellationToken.None);
+
+        await _serverTask;
+
+        Assert.That(result1.Success, Is.True);
+        Assert.That(result2.Success, Is.True);
+        Assert.That(result3.Success, Is.True);
+
+        // tylko jedno TCP połączenie mimo trzech wywołań
+        Assert.That(connectionCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task ShouldNotReuseConnectionWhenKeepAliveDisabled()
+    {
+        var connectionCount = 0;
+        SetupServerLogicMulti(requireTls: false, expectedConnections: 3, onNewConnection: () => Interlocked.Increment(ref connectionCount));
+
+        var connection = new Connection
+        {
+            Host = "127.0.0.1",
+            Port = _port,
+            TlsMode = TlsMode.None,
+            ConnectTimeoutSeconds = 5,
+        };
+        var input = new Input
+        {
+            Hl7Message = Helpers.BuildTestMessage(),
+        };
+        var options = new Options
+        {
+            ExpectAcknowledgement = true,
+            KeepConnectionAlive = false,
+        };
+
+        Mllp.Send(input, connection, options, CancellationToken.None);
+        Mllp.Send(input, connection, options, CancellationToken.None);
+        Mllp.Send(input, connection, options, CancellationToken.None);
+
+        await _serverTask;
+
+        // każde wywołanie otwiera nowe połączenie
+        Assert.That(connectionCount, Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task ShouldReconnectAfterConnectionDrop()
+    {
+        var connectionCount = 0;
+        SetupServerLogicMultiMessage(
+            requireTls: false,
+            onNewConnection: () => Interlocked.Increment(ref connectionCount));
+
+        var connection = new Connection
+        {
+            Host = "127.0.0.1",
+            Port = _port,
+            TlsMode = TlsMode.None,
+            ConnectTimeoutSeconds = 5,
+        };
+        var input = new Input
+        {
+            Hl7Message = Helpers.BuildTestMessage(),
+        };
+        var options = new Options
+        {
+            ExpectAcknowledgement = true,
+            KeepConnectionAlive = true,
+            ConnectionCacheExpirationMinutes = 1,
+        };
+
+        var result1 = Mllp.Send(input, connection, options, CancellationToken.None);
+        Assert.That(result1.Success, Is.True);
+
+        _serverCts.Cancel();
+        _listener.Stop();
+        await Task.Delay(500);
+
+        _listener = new TcpListener(IPAddress.Loopback, _port);
+        _listener.Start();
+        _serverCts = new CancellationTokenSource();
+        SetupServerLogicMultiMessage(
+            requireTls: false,
+            onNewConnection: () => Interlocked.Increment(ref connectionCount));
+
+        var result2 = Mllp.Send(input, connection, options, CancellationToken.None);
+        Assert.That(result2.Success, Is.True);
+
+        Assert.That(connectionCount, Is.EqualTo(2));
+    }
+
     private static Encoding ResolveEncoding(FileEncoding fileEncoding, string encodingInString)
     {
         return fileEncoding switch
@@ -480,6 +610,33 @@ public class FunctionalTests
         return certificate.GetCertHashString();
     }
 
+    private async Task<string> HandleClientAsync(TcpClient client, bool requireTls, Encoding messageEncoding)
+    {
+        Stream stream = client.GetStream();
+
+        if (requireTls)
+        {
+            var serverCert = new X509Certificate2(_serverPfxPath, _password);
+            var sslStream = new SslStream(stream, false);
+            await sslStream.AuthenticateAsServerAsync(
+                serverCert,
+                clientCertificateRequired: true,
+                checkCertificateRevocation: false);
+            stream = sslStream;
+        }
+
+        var encoding = messageEncoding ?? Encoding.ASCII;
+        var received = await Helpers.ReadMllpMessage(stream, encoding, _serverCts.Token);
+        var ack = Helpers.BuildAck(Helpers.ExtractControlId(received));
+        var response = Encoding.ASCII.GetBytes(MLLP.CreateMLLPMessage(ack));
+        await stream.WriteAsync(response, 0, response.Length);
+        await stream.FlushAsync();
+
+        client.Client.Shutdown(SocketShutdown.Send);
+        await Task.Delay(200);
+        return received;
+    }
+
     private void SetupServerLogic(bool requireTls, Encoding messageEncoding = null)
     {
         _serverTask = Task.Run(async () =>
@@ -487,43 +644,109 @@ public class FunctionalTests
             try
             {
                 using var client = await _listener.AcceptTcpClientAsync(_serverCts.Token);
-                Stream stream = client.GetStream();
-
-                if (requireTls)
-                {
-                    var serverCert = new X509Certificate2(
-                        _serverPfxPath,
-                        _password);
-                    var sslStream = new SslStream(
-                        stream,
-                        false);
-                    await sslStream.AuthenticateAsServerAsync(
-                        serverCert,
-                        clientCertificateRequired: true,
-                        checkCertificateRevocation: false);
-                    stream = sslStream;
-                }
-
-                var encoding = messageEncoding ?? Encoding.ASCII;
-                var received = await Helpers.ReadMllpMessage(
-                    stream,
-                    encoding,
-                    _serverCts.Token);
-                var ack = Helpers.BuildAck(Helpers.ExtractControlId(received));
-                var response = Encoding.ASCII.GetBytes(MLLP.CreateMLLPMessage(ack));
-
-                await stream.WriteAsync(
-                    response,
-                    0,
-                    response.Length);
-                await stream.FlushAsync();
-
-                return received;
+                return await HandleClientAsync(client, requireTls, messageEncoding);
             }
             catch
             {
                 return null;
             }
         });
+    }
+
+    private void SetupServerLogicMulti(bool requireTls, int expectedConnections, Action onNewConnection = null, Encoding messageEncoding = null)
+    {
+        _serverTask = Task.Run(async () =>
+        {
+            string lastReceived = null;
+
+            for (var i = 0; i < expectedConnections; i++)
+            {
+                try
+                {
+                    using var client = await _listener.AcceptTcpClientAsync(_serverCts.Token);
+                    onNewConnection?.Invoke();
+                    lastReceived = await HandleClientAsync(client, requireTls, messageEncoding);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+
+                }
+            }
+
+            return lastReceived;
+        });
+    }
+
+    private async Task<string> HandleClientMultiMessageAsync(TcpClient client, bool requireTls, Encoding messageEncoding)
+    {
+        Stream stream = client.GetStream();
+
+        if (requireTls)
+        {
+            var serverCert = new X509Certificate2(_serverPfxPath, _password);
+            var sslStream = new SslStream(stream, false);
+            await sslStream.AuthenticateAsServerAsync(
+                serverCert,
+                clientCertificateRequired: true,
+                checkCertificateRevocation: false);
+            stream = sslStream;
+        }
+
+        var encoding = messageEncoding ?? Encoding.ASCII;
+        string lastReceived = null;
+
+        while (!_serverCts.Token.IsCancellationRequested)
+        {
+            try
+            {
+                var received = await Helpers.ReadMllpMessage(stream, encoding, _serverCts.Token);
+                if (received == null) break;
+
+                lastReceived = received;
+                var ack = Helpers.BuildAck(Helpers.ExtractControlId(received));
+                var response = Encoding.ASCII.GetBytes(MLLP.CreateMLLPMessage(ack));
+                await stream.WriteAsync(response, 0, response.Length);
+                await stream.FlushAsync();
+            }
+            catch (IOException)
+            {
+                break;
+            }
+        }
+
+        return lastReceived;
+    }
+
+    private void SetupServerLogicMultiMessage(bool requireTls, Action onNewConnection = null, Encoding messageEncoding = null)
+    {
+        _serverTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var client = await _listener.AcceptTcpClientAsync(_serverCts.Token);
+                onNewConnection?.Invoke();
+                return await HandleClientMultiMessageAsync(client, requireTls, messageEncoding);
+            }
+            catch
+            {
+                return null;
+            }
+        });
+    }
+
+    private static void ClearConnectionCache()
+    {
+        var cache = MemoryCache.Default;
+        var keys = cache
+            .Where(kvp => kvp.Key.StartsWith("mllp:"))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in keys)
+            cache.Remove(key);
     }
 }
