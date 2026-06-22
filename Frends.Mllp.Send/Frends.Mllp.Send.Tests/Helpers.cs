@@ -97,4 +97,16 @@ internal static class Helpers
 
         return new CertificateStoreCleanup(StoreName.Root, StoreLocation.CurrentUser, certificate.Thumbprint);
     }
+
+    internal static string BuildLargeTestMessage(int sizeInMb)
+    {
+        var targetBytes = sizeInMb * 1024 * 1024;
+
+        var filler = new string('A', targetBytes);
+
+        return "MSH|^~\\&|TestSystem|TestFacility|ReceivingApp|ReceivingFacility|" +
+               $"{DateTime.UtcNow:yyyyMMddHHmmss}||ADT^A01|MSG00001|P|2.5.1\r" +
+               "PID|1||12345^^^Hospital^MR||Doe^John||19800101|M\r" +
+               $"OBX|1|TX|DOC^Document||{filler}||||||F\r";
+    }
 }

@@ -111,6 +111,14 @@ internal sealed class MessageLogger : IDisposable
         ("Size", $"{messageSize} bytes"),
         ("Limit", $"{limit} bytes"));
 
+    internal void LogRetryAttempt(string host, int port, int attempt, int totalAttempts, string reason) =>
+    Log(
+        "RETRY",
+        sessionId: null,
+        ("Host", $"{host}:{port}"),
+        ("Attempt", $"{attempt}/{totalAttempts}"),
+        ("Reason", reason));
+
     private static string GetPreview(string message)
     {
         if (string.IsNullOrEmpty(message))

@@ -1,13 +1,13 @@
-﻿using Frends.Mllp.Send.Definitions;
-using Frends.Mllp.Send.Helpers;
-using NHapi.Base.Parser;
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.Caching;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using Frends.Mllp.Send.Definitions;
+using Frends.Mllp.Send.Helpers;
+using NHapi.Base.Parser;
 
 namespace Frends.Mllp.Send;
 
@@ -65,39 +65,26 @@ public static class Mllp
             }
 
             var receiveTimeoutMs = (int)TimeSpan.FromSeconds(connection.ReadTimeoutSeconds).TotalMilliseconds;
-            var acknowledgement = string.Empty;
-
-            if (options.KeepConnectionAlive)
-            {
-                var cached = GetOrCreateConnection(connection, options, clientCert);
-
-                cached.Lock.Wait(cancellationToken);
-                try
-                {
-                    acknowledgement = SendWithWrapper(cached.Wrapper, message, connection, options, logger, receiveTimeoutMs);
-                }
-                catch
-                {
-                    ConnectionCache.Remove(GetConnectionCacheKey(connection));
-                    throw;
-                }
-                finally
-                {
-                    cached.Lock.Release();
-                }
-            }
-            else
-            {
-                using var wrapper = CreateWrapper(connection, clientCert);
-                acknowledgement = SendWithWrapper(wrapper, message, connection, options, logger, receiveTimeoutMs);
-            }
+            var outcome = SendWithRetry(connection, options, clientCert, message, logger, receiveTimeoutMs, cancellationToken);
 
             return new Result
             {
                 Success = true,
-                Output = acknowledgement,
+                Output = outcome.Acknowledgement,
+                AckResultType = outcome.AckResultType,
+                AckCodeValue = outcome.AckCode,
+                AckErrorDescription = outcome.AckErrorDescription,
                 Error = null,
             };
+        }
+        catch (AckRejectedException ex)
+        {
+            logger?.LogMessageFailure(input?.Hl7Message, connection?.Host, connection?.Port ?? 0, ex);
+            var result = ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
+            result.AckResultType = ex.AckResultType;
+            result.AckCodeValue = ex.AckCode;
+            result.AckErrorDescription = ex.AckErrorDescription;
+            return result;
         }
         catch (Exception ex)
         {
@@ -111,7 +98,52 @@ public static class Mllp
         }
     }
 
-    private static string SendWithWrapper(
+    private static SendOutcome SendWithRetry(
+    Connection connection,
+    Options options,
+    X509Certificate2 clientCert,
+    string message,
+    MessageLogger logger,
+    int receiveTimeoutMs,
+    CancellationToken cancellationToken)
+    {
+        var totalAttempts = options.RetryCount + 1;
+        Exception lastException = null;
+
+        for (var attempt = 1; attempt <= totalAttempts; attempt++)
+        {
+            try
+            {
+                if (options.KeepConnectionAlive)
+                {
+                    return SendWithKeepAlive(connection, options, clientCert, message, logger, receiveTimeoutMs, cancellationToken);
+                }
+
+                using var wrapper = CreateWrapper(connection, clientCert);
+                return SendWithWrapper(wrapper, message, connection, options, logger, receiveTimeoutMs);
+            }
+            catch (AckRejectedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+
+                if (attempt >= totalAttempts)
+                    break;
+
+                logger.LogRetryAttempt(connection.Host, connection.Port, attempt, totalAttempts, ex.Message);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                Thread.Sleep(TimeSpan.FromSeconds(options.RetryIntervalSeconds));
+            }
+        }
+
+        throw lastException;
+    }
+
+    private static SendOutcome SendWithWrapper(
     MtlsMllpWrapper wrapper,
     string message,
     Connection connection,
@@ -121,27 +153,7 @@ public static class Mllp
     {
         logger.LogMessageSent(message, connection.Host, connection.Port);
 
-        if (options.ExpectAcknowledgement)
-        {
-            try
-            {
-                var ack = wrapper.Send(
-                    message,
-                    receiveTimeoutMs,
-                    options.StartBlockByte,
-                    options.EndBlockByte,
-                    options.CarriageReturnByte);
-
-                logger.LogMessageSuccess(message, connection.Host, connection.Port, ackReceived: true, ackPreview: ack);
-                return ack;
-            }
-            catch (Exception ex) when (IsAckException(ex))
-            {
-                logger.LogAcknowledgementFailure(connection.Host, connection.Port, ex);
-                throw;
-            }
-        }
-        else
+        if (!options.ExpectAcknowledgement)
         {
             wrapper.SendOnly(
                 message,
@@ -150,7 +162,38 @@ public static class Mllp
                 options.CarriageReturnByte);
 
             logger.LogMessageSuccess(message, connection.Host, connection.Port, ackReceived: false, ackPreview: null);
-            return string.Empty;
+            return new SendOutcome(string.Empty, AckResultType.NotApplicable, null, null);
+        }
+
+        try
+        {
+            var ack = wrapper.Send(
+                message,
+                receiveTimeoutMs,
+                options.StartBlockByte,
+                options.EndBlockByte,
+                options.CarriageReturnByte);
+
+            var parsed = AckParser.Parse(ack);
+            var accepted = AckParser.IsAcceptable(parsed.ResultType, options.AcceptableAckCodes);
+
+            logger.LogMessageSuccess(message, connection.Host, connection.Port, ackReceived: true, ackPreview: ack);
+
+            if (!accepted)
+            {
+                throw new AckRejectedException(
+                    $"ACK was classified as {parsed.ResultType} (code: {parsed.AckCode}). {parsed.ErrorDescription}",
+                    parsed.ResultType,
+                    parsed.AckCode,
+                    parsed.ErrorDescription);
+            }
+
+            return new SendOutcome(ack, parsed.ResultType, parsed.AckCode, parsed.ErrorDescription);
+        }
+        catch (Exception ex) when (IsAckException(ex))
+        {
+            logger.LogAcknowledgementFailure(connection.Host, connection.Port, ex);
+            throw;
         }
     }
 
@@ -264,6 +307,46 @@ public static class Mllp
         }
 
         return wrapper;
+    }
+
+    private static SendOutcome SendWithKeepAlive(
+    Connection connection,
+    Options options,
+    X509Certificate2 clientCert,
+    string message,
+    MessageLogger logger,
+    int receiveTimeoutMs,
+    CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var cached = GetOrCreateConnection(connection, options, clientCert);
+            cached.Lock.Wait(cancellationToken);
+            try
+            {
+                return SendWithWrapper(cached.Wrapper, message, connection, options, logger, receiveTimeoutMs);
+            }
+            catch (AckRejectedException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt == 0 && ex is IOException or System.Net.Sockets.SocketException)
+            {
+                logger.LogConnectionDropped(connection.Host, connection.Port, ex.Message);
+                ConnectionCache.Remove(GetConnectionCacheKey(connection));
+            }
+            catch
+            {
+                ConnectionCache.Remove(GetConnectionCacheKey(connection));
+                throw;
+            }
+            finally
+            {
+                cached.Lock.Release();
+            }
+        }
+
+        throw new InvalidOperationException("Unreachable");
     }
 
     private static string GetConnectionCacheKey(Connection connection) =>
