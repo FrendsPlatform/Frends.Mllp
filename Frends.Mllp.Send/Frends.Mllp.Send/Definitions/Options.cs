@@ -106,7 +106,6 @@ public class Options
     /// <example>C:\Logs\mllp-messages.log</example>
     [DisplayFormat(DataFormatString = "Text")]
     [DefaultValue("")]
-    [RequiredIf(nameof(EnableLogging), true, ErrorMessage = "LogFilePath is required when logging is enabled.")]
     [UIHint(nameof(EnableLogging), "", true)]
     public string LogFilePath { get; set; } = string.Empty;
 

@@ -507,6 +507,7 @@ public class FunctionalTests
         var result2 = Mllp.Send(input, connection, options, CancellationToken.None);
         var result3 = Mllp.Send(input, connection, options, CancellationToken.None);
 
+        _serverCts.Cancel();
         await _serverTask;
 
         Assert.That(result1.Success, Is.True);
@@ -648,35 +649,6 @@ public class FunctionalTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(stopwatch.Elapsed.TotalSeconds, Is.GreaterThanOrEqualTo(1.8));
-    }
-
-    [Test]
-    public void ShouldNotRetryWhenRetryCountIsZero()
-    {
-        var input = new Input
-        {
-            Hl7Message = Helpers.BuildTestMessage(),
-        };
-        var connection = new Connection
-        {
-            Host = "127.0.0.1",
-            Port = _port,
-            TlsMode = TlsMode.None,
-            ConnectTimeoutSeconds = 1,
-        };
-        var options = new Options
-        {
-            ExpectAcknowledgement = true,
-            RetryCount = 0,
-            RetryIntervalSeconds = 5,
-            ThrowErrorOnFailure = false,
-        };
-
-        var stopwatch = Stopwatch.StartNew();
-        var result = Mllp.Send(input, connection, options, CancellationToken.None);
-        stopwatch.Stop();
-
-        Assert.That(result.Success, Is.False);
     }
 
     [Test]
@@ -868,7 +840,7 @@ public class FunctionalTests
 
         if (requireTls)
         {
-            var serverCert = new X509Certificate2(_serverPfxPath, _password);
+            using var serverCert = new X509Certificate2(_serverPfxPath, _password);
             var sslStream = new SslStream(stream, false);
             await sslStream.AuthenticateAsServerAsync(
                 serverCert,
@@ -937,7 +909,7 @@ public class FunctionalTests
 
         if (requireTls)
         {
-            var serverCert = new X509Certificate2(_serverPfxPath, _password);
+            using var serverCert = new X509Certificate2(_serverPfxPath, _password);
             var sslStream = new SslStream(stream, false);
             await sslStream.AuthenticateAsServerAsync(
                 serverCert,

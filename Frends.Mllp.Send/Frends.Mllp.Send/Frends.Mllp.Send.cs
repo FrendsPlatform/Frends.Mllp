@@ -136,7 +136,8 @@ public static class Mllp
                 logger.LogRetryAttempt(connection.Host, connection.Port, attempt, totalAttempts, ex.Message);
 
                 cancellationToken.ThrowIfCancellationRequested();
-                Thread.Sleep(TimeSpan.FromSeconds(options.RetryIntervalSeconds));
+                if (cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(options.RetryIntervalSeconds)))
+                    cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
@@ -282,10 +283,10 @@ public static class Mllp
                 SlidingExpiration = TimeSpan.FromMinutes(options.ConnectionCacheExpirationMinutes),
                 RemovedCallback = args =>
                 {
-                    if (args.RemovedReason != CacheEntryRemovedReason.Removed)
-                        (args.CacheItem.Value as CachedConnection)?.Dispose();
+                    (args.CacheItem.Value as CachedConnection)?.Dispose();
                 },
-            };
+            }
+        ;
 
             ConnectionCache.Add(cacheKey, entry, policy);
             return entry;
@@ -320,6 +321,8 @@ public static class Mllp
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            var cacheKey = GetConnectionCacheKey(connection);
+            var invalidateCacheEntry = false;
             var cached = GetOrCreateConnection(connection, options, clientCert);
             cached.Lock.Wait(cancellationToken);
             try
@@ -333,16 +336,18 @@ public static class Mllp
             catch (Exception ex) when (attempt == 0 && ex is IOException or System.Net.Sockets.SocketException)
             {
                 logger.LogConnectionDropped(connection.Host, connection.Port, ex.Message);
-                ConnectionCache.Remove(GetConnectionCacheKey(connection));
+                invalidateCacheEntry = true;
             }
             catch
             {
-                ConnectionCache.Remove(GetConnectionCacheKey(connection));
+                invalidateCacheEntry = true;
                 throw;
             }
             finally
             {
                 cached.Lock.Release();
+                if (invalidateCacheEntry)
+                    ConnectionCache.Remove(cacheKey);
             }
         }
 
@@ -350,5 +355,5 @@ public static class Mllp
     }
 
     private static string GetConnectionCacheKey(Connection connection) =>
-        $"mllp:{connection.Host}:{connection.Port}:{connection.TlsMode}:{connection.ClientCertPath}";
+        $"mllp:{connection.Host}:{connection.Port}:{connection.TlsMode}:{connection.ClientCertPath}:{connection.Encoding}:{connection.EncodingInString ?? string.Empty}";
 }
