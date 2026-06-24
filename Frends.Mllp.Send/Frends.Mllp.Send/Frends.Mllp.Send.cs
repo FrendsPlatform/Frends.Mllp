@@ -41,8 +41,6 @@ public static class Mllp
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            ValidateParameters(input, connection);
-
             logger = new MessageLogger(options.EnableLogging, options.LogFilePath, options.LogMessageContent);
 
             var parser = options.ValidateWithNhapi ? new PipeParser() : null;
@@ -196,15 +194,6 @@ public static class Mllp
             logger.LogAcknowledgementFailure(connection.Host, connection.Port, ex);
             throw;
         }
-    }
-
-    private static void ValidateParameters(Input input, Connection connection)
-    {
-        if (string.IsNullOrWhiteSpace(input.Hl7Message))
-            throw new ArgumentException("HL7 message cannot be empty.", nameof(input));
-
-        if (connection.Encoding == FileEncoding.Other && string.IsNullOrWhiteSpace(connection.EncodingInString))
-            throw new ArgumentException("EncodingInString must not be null or empty when Encoding is set to Other.", nameof(connection));
     }
 
     private static Encoding GetEncoding(Connection connection)
