@@ -420,7 +420,7 @@ public class FunctionalTests
         Assert.That(ex, Is.Not.Null);
         Assert.That(
             ex.Message,
-            Does.Contain("EncodingInString"));
+            Does.Contain("not a supported encoding name"));
     }
 
     [Test]
@@ -869,7 +869,7 @@ public class FunctionalTests
                 using var client = await _listener.AcceptTcpClientAsync(_serverCts.Token);
                 return await HandleClientAsync(client, requireTls, messageEncoding);
             }
-            catch
+            catch (OperationCanceledException)
             {
                 return null;
             }
@@ -893,9 +893,6 @@ public class FunctionalTests
                 catch (OperationCanceledException)
                 {
                     break;
-                }
-                catch
-                {
                 }
             }
 
@@ -953,7 +950,7 @@ public class FunctionalTests
                 onNewConnection?.Invoke();
                 return await HandleClientMultiMessageAsync(client, requireTls, messageEncoding);
             }
-            catch
+            catch (OperationCanceledException)
             {
                 return null;
             }
