@@ -8,6 +8,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using NHapiTools.Base.Net;
 
+namespace Frends.Mllp.Send;
+
 internal class MtlsMllpWrapper : IDisposable
 {
     private static readonly FieldInfo TcpField =

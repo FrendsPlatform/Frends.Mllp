@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.0] - 2026-06-22
+
+### Added
+
+- `Options.MaxMessageSize` to reject outgoing messages exceeding a configurable size limit (0 = unlimited), logged as MESSAGE REJECTED when enabled
+- `Options.KeepConnectionAlive` and `Options.ConnectionCacheExpirationMinutes` to reuse a single MLLP connection across multiple Send executions instead of opening a new connection each time
+- `Options.RetryCount` and `Options.RetryIntervalSeconds` to automatically retry sending on failure, with a configurable delay between attempts
+- ACK parsing and classification (AckResultType: Accept, Error, Reject, Invalid, NotApplicable) based on MSA-1/MSA-3, returned via Result.AckResultType, Result.AckCodeValue, and Result.AckErrorDescription
+- `Options.AcceptableAckCodes` to configure which ACK classifications are treated as a successful send (All, Success, Error, Reject)
+- `Options.EnableLogging`, `Options.LogFilePath`, and `Options.LogMessageContent` to log message send events (sent, success, failure, rejected, retry, connection dropped, ACK failure) to file
+
 ## [1.4.0] - 2026-05-06
 
 ### Added

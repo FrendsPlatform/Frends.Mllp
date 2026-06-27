@@ -51,4 +51,61 @@
         /// </summary>
         Other,
     }
+
+    /// <summary>
+    /// Classification of the received HL7 acknowledgement.
+    /// </summary>
+    public enum AckResultType
+    {
+        /// <summary>
+        /// Acknowledgement code was AA or CA (Application/Commit Accept).
+        /// </summary>
+        Accept,
+
+        /// <summary>
+        /// Acknowledgement code was AE or CE (Application/Commit Error).
+        /// </summary>
+        Error,
+
+        /// <summary>
+        /// Acknowledgement code was AR or CR (Application/Commit Reject).
+        /// </summary>
+        Reject,
+
+        /// <summary>
+        /// Acknowledgement could not be parsed, or MSA-1 contained an unrecognized code.
+        /// </summary>
+        Invalid,
+
+        /// <summary>
+        /// No acknowledgement was expected or received (one-way send).
+        /// </summary>
+        NotApplicable,
+    }
+
+    /// <summary>
+    /// Determines which ACK classifications are treated as a successful send.
+    /// </summary>
+    public enum AcceptableAckCodes
+    {
+        /// <summary>
+        /// AA, CA, AE, CE, AR, CR are all treated as success.
+        /// </summary>
+        All,
+
+        /// <summary>
+        /// Only AA, CA are treated as success.
+        /// </summary>
+        Success,
+
+        /// <summary>
+        /// AA, CA, AE, CE are treated as success.
+        /// </summary>
+        Error,
+
+        /// <summary>
+        /// AA, CA, AR, CR are treated as success.
+        /// </summary>
+        Reject,
+    }
 }

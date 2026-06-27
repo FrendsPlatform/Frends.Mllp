@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Frends.Mllp.Send.Helpers;
 
 namespace Frends.Mllp.Send.Definitions;
 
@@ -42,6 +43,79 @@ public class Options
     /// <example>13</example>
     [DefaultValue(13)]
     public byte CarriageReturnByte { get; set; } = 13;
+
+    /// <summary>
+    /// Maximum message size in bytes. Messages exceeding this limit will not be sent. 0 means unlimited.
+    /// </summary>
+    /// <example>1048576</example>
+    [DefaultValue(0)]
+    [Range(0, int.MaxValue, ErrorMessage = "MaxMessageSize cannot be negative.")]
+    public int MaxMessageSize { get; set; } = 0;
+
+    /// <summary>
+    /// Determines which ACK codes are considered a successful send.
+    /// </summary>
+    /// <example>AcceptableAckCodes.Success</example>
+    [DefaultValue(AcceptableAckCodes.Success)]
+    public AcceptableAckCodes AcceptableAckCodes { get; set; } = AcceptableAckCodes.Success;
+
+    /// <summary>
+    /// Keep the TCP connection alive and reuse it across multiple executions.
+    /// When enabled, the connection is cached for the duration of the sliding expiration window.
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    public bool KeepConnectionAlive { get; set; } = false;
+
+    /// <summary>
+    /// How long (in minutes) an idle cached connection is kept alive before being closed.
+    /// Only used when KeepConnectionAlive is true.
+    /// </summary>
+    /// <example>5</example>
+    [DefaultValue(5)]
+    [UIHint(nameof(KeepConnectionAlive), "", true)]
+    [Range(1, 60, ErrorMessage = "ConnectionCacheExpirationMinutes must be between 1 and 60.")]
+    public int ConnectionCacheExpirationMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Number of times to retry sending the message if an error occurs. 0 means no retries (single attempt).
+    /// </summary>
+    /// <example>3</example>
+    [DefaultValue(0)]
+    [Range(0, 100, ErrorMessage = "RetryCount cannot be negative.")]
+    public int RetryCount { get; set; } = 0;
+
+    /// <summary>
+    /// Delay in seconds between retry attempts. Only used when RetryCount is greater than 0.
+    /// </summary>
+    /// <example>5</example>
+    [DefaultValue(5)]
+    [Range(0, 3600, ErrorMessage = "RetryIntervalSeconds cannot be negative.")]
+    public int RetryIntervalSeconds { get; set; } = 5;
+
+    /// <summary>
+    /// Enable message processing logging to file.
+    /// </summary>
+    /// <example>true</example>
+    [DefaultValue(false)]
+    public bool EnableLogging { get; set; } = false;
+
+    /// <summary>
+    /// File path for logging message send events. If not specified, logs to a default location.
+    /// </summary>
+    /// <example>C:\Logs\mllp-messages.log</example>
+    [DisplayFormat(DataFormatString = "Text")]
+    [DefaultValue("")]
+    [UIHint(nameof(EnableLogging), "", true)]
+    public string LogFilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Include full message content in logs. If false, only logs message metadata and status.
+    /// </summary>
+    /// <example>false</example>
+    [DefaultValue(false)]
+    [UIHint(nameof(EnableLogging), "", true)]
+    public bool LogMessageContent { get; set; } = false;
 
     /// <summary>
     /// Whether to throw an error on failure.

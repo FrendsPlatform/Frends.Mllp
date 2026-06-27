@@ -18,6 +18,24 @@ public class Result
     public string Output { get; set; }
 
     /// <summary>
+    /// Classification of the received acknowledgement (Accept, Error, Reject, Invalid, or NotApplicable for one-way sends).
+    /// </summary>
+    /// <example>AckResultType.Accept</example>
+    public AckResultType AckResultType { get; set; }
+
+    /// <summary>
+    /// The raw acknowledgement code extracted from MSA-1 (e.g. AA, AE, AR). Null if no ACK was received or parsing failed.
+    /// </summary>
+    /// <example>AA</example>
+    public string AckCodeValue { get; set; }
+
+    /// <summary>
+    /// Error or status description extracted from MSA-3, present on negative acknowledgements.
+    /// </summary>
+    /// <example>Required field PID-3 is missing</example>
+    public string AckErrorDescription { get; set; }
+
+    /// <summary>
     /// Error that occurred during task execution.
     /// </summary>
     /// <example>object { string Message, Exception AdditionalInfo }</example>
