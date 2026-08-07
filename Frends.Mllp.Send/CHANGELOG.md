@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.0] - 2026-08-06
+
+### Changed
+
+- Updated copyright notice to comply with Frends standard requirements.
+
 ## [1.5.0] - 2026-06-22
 
 ### Added
