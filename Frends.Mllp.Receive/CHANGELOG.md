@@ -1,11 +1,17 @@
 # Changelog
 
+## [2.1.0] - 2026-08-06
+
+### Changed
+
+- Updated package copyright to comply with Frends task standards.
+
 ## [2.0.0] - 2026-06-05
 
 ### Added
 
 - `WriteMessagesToFile` and `MessageOutputDirectory` options to handle streaming messages to temp files instead of memory - Output returns file paths. Users are responsible for managing temp files.
-- `MaxConcurrentConnections` option to limit simultaneous connections — excess connections are rejected and logged.
+- `MaxConcurrentConnections` option to limit simultaneous connections - excess connections are rejected and logged.
 - `MaxMessageSize` option to reject oversized messages with a NACK.
 - `EnableLogging`, `LogFilePath` and `LogMessageContent` options to log message events to a file.
 - `StartBlockByte`, `EndBlockByte`, `CarriageReturnByte` and `CarriageReturnRequired` options to configure MLLP framing.
@@ -13,7 +19,7 @@
 
 ### Changed
 
-- ACK generation now uses only the MSH line instead of full payload — fixes crash on large messages.
+- ACK generation now uses only the MSH line instead of full payload - fixes crash on large messages.
 - [Breaking change] `AcknowledgementMessage` renamed to `AcknowledgementType` in `Connection` and changed from `string` to `AcknowledgementType` enum. Valid values: `AA`, `AE`, `AR`.
 
 ## [1.4.0] - 2026-05-18
