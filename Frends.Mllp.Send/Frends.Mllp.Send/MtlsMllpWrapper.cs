@@ -31,9 +31,10 @@ internal class MtlsMllpWrapper : IDisposable
         _activeStream = (Stream)StreamToUseField.GetValue(_client);
     }
 
-#pragma warning disable FT0014 // Documentation required tags are missing
+    /// <summary>
+    /// Disposes the underlying MLLP client.
+    /// </summary>
     public void Dispose() => _client?.Dispose();
-#pragma warning restore FT0014 // Documentation required tags are missing
 
     internal void EnableMtls(
         X509Certificate2 clientCert,
