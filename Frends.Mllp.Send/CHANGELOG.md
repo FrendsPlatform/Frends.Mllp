@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.0] - 2026-10-15
+
+### Fixed
+
+- Added missing documentation for the wrapper used when sending messages.
+
 ## [1.6.0] - 2026-08-06
 
 ### Changed
