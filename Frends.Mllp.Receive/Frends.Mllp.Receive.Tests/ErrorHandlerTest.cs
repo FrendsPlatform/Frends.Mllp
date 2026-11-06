@@ -29,6 +29,39 @@ public class ErrorHandlerTest
     }
 
     [Test]
+    public void Should_Append_Warnings_To_Message_When_Throwing()
+    {
+        var inner = new InvalidOperationException("boom");
+
+        var ex = Assert.Throws<Exception>(() =>
+            Frends.Mllp.Receive.Helpers.ErrorHandler.Handle(inner, true, string.Empty, ["w1", "w2"]));
+
+        Assert.That(ex.Message, Is.EqualTo("boom Warnings: w1 | w2"));
+        Assert.That(ex.InnerException, Is.SameAs(inner));
+    }
+
+    [Test]
+    public void Should_Keep_Message_Unchanged_When_Throwing_Without_Warnings()
+    {
+        var ex = Assert.Throws<Exception>(() =>
+            Frends.Mllp.Receive.Helpers.ErrorHandler.Handle(new InvalidOperationException("boom"), true, string.Empty));
+
+        Assert.That(ex.Message, Is.EqualTo("boom"));
+    }
+
+    [Test]
+    public void Should_Return_Warnings_And_Original_Exception_When_Not_Throwing()
+    {
+        var inner = new InvalidOperationException("boom");
+
+        var result = Frends.Mllp.Receive.Helpers.ErrorHandler.Handle(inner, false, string.Empty, ["w1"]);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Warnings, Is.EqualTo(new[] { "w1" }));
+        Assert.That(result.Error.AdditionalInfo, Is.SameAs(inner));
+    }
+
+    [Test]
     public void Should_Use_Custom_ErrorMessageOnFailure()
     {
         var options = DefaultOptions();

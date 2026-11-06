@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.IO;
 using System.Net;
@@ -21,6 +20,7 @@ using NHapiTools.Base;
 using NHapiTools.Base.Util;
 using SuperSocket.ProtoBase;
 using SuperSocket.Server.Abstractions;
+using SuperSocket.Server.Abstractions.Session;
 using SuperSocket.Server.Host;
 
 namespace Frends.Mllp.Receive;
@@ -38,26 +38,50 @@ public static class Mllp
     /// <param name="connection">Connection parameters.</param>
     /// <param name="options">Additional parameters.</param>
     /// <param name="cancellationToken">A cancellation token provided by Frends Platform.</param>
-    /// <returns>object { bool Success, string[] Output, object Error { string Message, Exception AdditionalInfo } }</returns>
-    public static async Task<Result> Receive(
+    /// <returns>object { bool Success, string[] Output, string[] Warnings, object Error { string Message, Exception AdditionalInfo } }</returns>
+    public static Task<Result> Receive(
         [PropertyTab] Input input,
         [PropertyTab] Connection connection,
         [PropertyTab] Options options,
         CancellationToken cancellationToken)
     {
+        return ReceiveCore(input, connection, options, new MessageCollector(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Implementation of <see cref="Receive"/> with an injectable collector, so tests can exercise a closed
+    /// receive window deterministically.
+    /// </summary>
+    /// <param name="input">Essential parameters.</param>
+    /// <param name="connection">Connection parameters.</param>
+    /// <param name="options">Additional parameters.</param>
+    /// <param name="collector">Collects the received messages; closed when the result is built.</param>
+    /// <param name="cancellationToken">A cancellation token provided by Frends Platform.</param>
+    /// <returns>The task result.</returns>
+    internal static async Task<Result> ReceiveCore(
+        Input input,
+        Connection connection,
+        Options options,
+        MessageCollector collector,
+        CancellationToken cancellationToken)
+    {
+        var diagnostics = new Diagnostics();
         X509Certificate2 serverCert = null;
         MessageLogger logger = null;
+        IHost host = null;
+        var started = false;
+        Exception failure = null;
+        var received = Array.Empty<string>();
+        var warnings = Array.Empty<string>();
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidationHandler.Run(input, connection, options);
 
-            var messages = new ConcurrentQueue<string>();
-            var messageFiles = new ConcurrentQueue<string>();
             var encoding = GetEncoding(connection);
 
-            logger = new MessageLogger(options.EnableLogging, options.LogFilePath, options.LogMessageContent);
+            logger = new MessageLogger(options.EnableLogging, options.LogFilePath, options.LogMessageContent, diagnostics);
             var connectionTracker = new ConnectionTracker(options.MaxConcurrentConnections);
 
             if (connection.TlsMode == TlsMode.Mtls)
@@ -67,9 +91,10 @@ public static class Mllp
                 serverCert = new X509Certificate2(connection.ServerCertPath, connection.ServerCertPassword);
             }
 
-            using var host = BuildMllpHost(input, connection, options, encoding, messages, messageFiles, logger, connectionTracker, serverCert);
+            host = BuildMllpHost(input, connection, options, encoding, collector, logger, connectionTracker, serverCert);
 
             await host.StartAsync(cancellationToken);
+            started = true;
 
             try
             {
@@ -78,32 +103,98 @@ public static class Mllp
             catch (OperationCanceledException)
             {
             }
-
-            try
-            {
-                await host.StopAsync(cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-            }
-
-            return new Result
-            {
-                Success = true,
-                Output = options.WriteMessagesToFile
-                    ? messageFiles.ToArray()
-                    : messages.ToArray(),
-                Error = null,
-            };
         }
         catch (Exception ex)
         {
-            return ErrorHandler.Handle(ex, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure);
+            failure = ex;
         }
         finally
         {
-            logger?.Dispose();
-            serverCert?.Dispose();
+            // Runs on every path, so the listener is always shut down. Nothing here can throw: closing the collector
+            // only takes a lock, and the helpers catch everything and record a warning instead.
+            // Closing the collector ends the receive window: no message can be added (and so none acknowledged)
+            // from here on, even if the listener is slow or fails to stop.
+            received = collector.Close();
+
+            // A host that failed to start is in a failed state and cannot be stopped; only dispose it.
+            if (started)
+                await StopHostQuietly(host, diagnostics);
+
+            DisposeQuietly(host, "MLLP host", diagnostics);
+            DisposeQuietly(logger, "message logger", diagnostics);
+            DisposeQuietly(serverCert, "server certificate", diagnostics);
+            warnings = diagnostics.ToArray();
+        }
+
+        if (failure is null)
+            return new Result { Success = true, Output = received, Warnings = warnings, Error = null };
+
+        // Every failure happens before the listener has accepted a connection (once started, only the listen delay
+        // remains: its cancellation is handled and its duration is range-validated), so there are no received
+        // messages to report here.
+        return ErrorHandler.Handle(failure, options.ThrowErrorOnFailure, options.ErrorMessageOnFailure, warnings);
+    }
+
+    private static async Task StopHostQuietly(IHost host, Diagnostics diagnostics)
+    {
+        var stopTimeout = TimeSpan.FromSeconds(10);
+        try
+        {
+            // Own timeout instead of the task's token: it may already be cancelled, which would abort the stop.
+            using var stopCts = new CancellationTokenSource(stopTimeout);
+            await host.StopAsync(stopCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            diagnostics.Warn($"The MLLP host did not stop within {stopTimeout.TotalSeconds:0} seconds.");
+        }
+        catch (Exception ex)
+        {
+            // The collector is already closed, so a listener that fails to stop cannot acknowledge messages.
+            diagnostics.Warn($"Failed to stop the MLLP host cleanly: {ex.Message}");
+        }
+    }
+
+    private static void DisposeQuietly(IDisposable disposable, string name, Diagnostics diagnostics)
+    {
+        try
+        {
+            disposable?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Warn($"Failed to dispose {name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Refuses a message that arrived after the receive window closed: no ACK is sent and the connection is closed,
+    /// so the sender can retry. Never throws, so it cannot fall into the NACK path of the package handler.
+    /// </summary>
+    private static async ValueTask RefuseLateMessage(IAppSession session, MllpPackage package, MessageLogger logger)
+    {
+        logger.LogMessageRejected(session.SessionID, "Receive window closed", package.PayloadSize);
+
+        if (package.IsFilePath)
+        {
+            try
+            {
+                File.Delete(package.Payload);
+            }
+            catch
+            {
+                // Best effort: the file was never reported in the result.
+            }
+        }
+
+        try
+        {
+            // LocalClosing: a deliberate close, so the Closed handler does not log it as a dropped connection.
+            await session.CloseAsync(SuperSocket.Connection.CloseReason.LocalClosing);
+        }
+        catch
+        {
+            // The session may already be closing because the server is shutting down.
         }
     }
 
@@ -133,8 +224,7 @@ public static class Mllp
         Connection connection,
         Options options,
         Encoding encoding,
-        ConcurrentQueue<string> messages,
-        ConcurrentQueue<string> messageFiles,
+        MessageCollector collector,
         MessageLogger logger,
         ConnectionTracker connectionTracker,
         X509Certificate2 serverCert)
@@ -218,26 +308,32 @@ public static class Mllp
                 {
                     logger.LogMessageReceived(package.Payload, sessionId);
 
-                    if (package.IsFilePath)
+                    // Everything that can fail (reading the message file, building the ACK) happens before the
+                    // message is recorded. A failure therefore sends a NACK for a message that is not in the
+                    // result, and nothing after the recording below can throw into the NACK path.
+                    var ackBytes = connection.SendAcknowledgement
+                        ? BuildAcknowledgementBytes(
+                            package.IsFilePath ? ReadMshFromFile(package.Payload, encoding) : package.Payload,
+                            connection,
+                            options,
+                            encoding)
+                        : null;
+
+                    // Record the message before acknowledging it. If the receive window has closed the message is
+                    // refused and not acknowledged, so the sender can retry. An ACK therefore always implies that
+                    // the message is part of the result.
+                    if (!collector.TryAdd(package.Payload))
                     {
-                        messageFiles.Enqueue(package.Payload);
-                    }
-                    else
-                    {
-                        messages.Enqueue(package.Payload);
+                        await RefuseLateMessage(session, package, logger);
+                        return;
                     }
 
-                    if (!connection.SendAcknowledgement)
+                    if (ackBytes is null)
                     {
                         logger.LogMessageSuccess(package.Payload, sessionId, false, "ACK disabled in configuration");
                         return;
                     }
 
-                    var mshForAck = package.IsFilePath
-                        ? ReadMshFromFile(package.Payload, encoding)
-                        : package.Payload;
-
-                    var ackBytes = BuildAcknowledgementBytes(mshForAck, connection, options, encoding);
                     if (ackBytes.Length == 0)
                     {
                         logger.LogMessageSuccess(package.Payload, sessionId, false, "ACK could not be built (invalid message format)");
@@ -259,11 +355,20 @@ public static class Mllp
                     logger.LogMessageFailure(package.Payload, sessionId, ex);
                     if (connection.SendAcknowledgement)
                     {
-                        var mshForAck = package.IsFilePath
-                            ? ReadMshFromFile(package.Payload, encoding)
-                            : package.Payload;
+                        // The failure may have been reading this very file; fall back to a generic NACK then.
+                        string mshForNack;
+                        try
+                        {
+                            mshForNack = package.IsFilePath
+                                ? ReadMshFromFile(package.Payload, encoding)
+                                : package.Payload;
+                        }
+                        catch
+                        {
+                            mshForNack = null;
+                        }
 
-                        var nackBytes = BuildNegativeAcknowledgement(mshForAck, options, encoding, ex.Message);
+                        var nackBytes = BuildNegativeAcknowledgement(mshForNack, options, encoding, ex.Message);
                         try
                         {
                             await session.SendAsync(nackBytes);

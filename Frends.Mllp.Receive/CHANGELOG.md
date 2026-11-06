@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.0] - 2026-11-06
+
+### Added
+
+- `Result.Warnings` lists non-fatal problems from the run (listener failed to stop, log file could not be created or written, cleanup failed). Empty when there were none. When the task fails and `ThrowErrorOnFailure` is true, the warnings are appended to the exception message.
+
+### Changed
+
+- Better parameter validation
+- Improved handling of incoming messages with automatic receive closing and checks on listener status.
+- A message that fails processing before it is acknowledged receives a NACK and is not included in the result, so a retry by the sender does not produce a duplicate.
+- Stopping the listener no longer uses the process cancellation token, so a cancelled process cannot abort the shutdown.
+
 ## [2.1.0] - 2026-08-06
 
 ### Changed
