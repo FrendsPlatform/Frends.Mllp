@@ -34,10 +34,11 @@ public class Connection
 
     /// <summary>
     /// How long the listener waits for incoming messages before shutting down. Value in seconds.
+    /// At most 2147483 seconds (about 24.8 days).
     /// </summary>
     /// <example>30</example>
     [DefaultValue(30)]
-    [Range(1, int.MaxValue, ErrorMessage = "Listen duration must be greater than zero.")]
+    [Range(1, 2147483, ErrorMessage = "Listen duration must be between 1 and 2147483 seconds.")]
     public int ListenDurationSeconds { get; set; } = 30;
 
     /// <summary>

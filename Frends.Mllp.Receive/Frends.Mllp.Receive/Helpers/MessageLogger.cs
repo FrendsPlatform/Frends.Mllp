@@ -13,10 +13,13 @@ internal sealed class MessageLogger : IDisposable
     private readonly bool logContent;
     private readonly StreamWriter writer;
     private readonly object lockObj = new();
+    private readonly Diagnostics diagnostics;
+    private bool writeFailureReported;
 
-    public MessageLogger(bool enabled, string logFilePath, bool logContent)
+    public MessageLogger(bool enabled, string logFilePath, bool logContent, Diagnostics diagnostics = null)
     {
         this.enabled = enabled;
+        this.diagnostics = diagnostics;
         this.logContent = logContent;
 
         if (!enabled)
@@ -42,7 +45,7 @@ internal sealed class MessageLogger : IDisposable
         catch (Exception ex)
         {
             this.enabled = false;
-            System.Diagnostics.Trace.TraceWarning($"[MessageLogger] Failed to initialize log file '{path}': {ex.Message}. Logging disabled.");
+            this.diagnostics?.Warn($"Message logging disabled: failed to initialize log file '{path}': {ex.Message}");
         }
     }
 
@@ -148,8 +151,11 @@ internal sealed class MessageLogger : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Trace.TraceWarning(
-                    $"[MessageLogger] Failed to write log entry: {ex.Message}");
+                if (!writeFailureReported)
+                {
+                    writeFailureReported = true;
+                    diagnostics?.Warn($"Message logging is incomplete: failed to write a log entry: {ex.Message}");
+                }
             }
         }
     }

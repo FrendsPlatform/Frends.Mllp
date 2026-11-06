@@ -5,14 +5,19 @@ namespace Frends.Mllp.Receive.Helpers;
 
 internal static class ErrorHandler
 {
-    internal static Result Handle(Exception exception, bool throwOnFailure, string errorMessageOnFailure)
+    internal static Result Handle(Exception exception, bool throwOnFailure, string errorMessageOnFailure, string[] warnings = null)
     {
+        warnings ??= [];
+
         if (throwOnFailure)
         {
-            if (string.IsNullOrEmpty(errorMessageOnFailure))
-                throw new Exception(exception.Message, exception);
+            var message = string.IsNullOrEmpty(errorMessageOnFailure) ? exception.Message : errorMessageOnFailure;
 
-            throw new Exception(errorMessageOnFailure, exception);
+            // A thrown exception has no Warnings property, so the warnings go into the message to stay visible.
+            if (warnings.Length > 0)
+                message += $" Warnings: {string.Join(" | ", warnings)}";
+
+            throw new Exception(message, exception);
         }
 
         var errorMessage = string.IsNullOrEmpty(errorMessageOnFailure)
@@ -25,6 +30,6 @@ internal static class ErrorHandler
             AdditionalInfo = exception,
         };
 
-        return new Result { Success = false, Error = error };
+        return new Result { Success = false, Warnings = warnings, Error = error };
     }
 }

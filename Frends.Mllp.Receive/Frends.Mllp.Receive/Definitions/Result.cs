@@ -18,6 +18,13 @@ public class Result
     public string[] Output { get; set; }
 
     /// <summary>
+    /// Non-fatal problems that occurred during the run, for example a listener that failed to stop,
+    /// a log file that could not be written, or a cleanup step that failed. Empty if there were none.
+    /// </summary>
+    /// <example>["Failed to stop the MLLP host cleanly: ..."]</example>
+    public string[] Warnings { get; set; } = [];
+
+    /// <summary>
     /// Error that occurred during task execution.
     /// </summary>
     /// <example>object { string Message, Exception AdditionalInfo }</example>
